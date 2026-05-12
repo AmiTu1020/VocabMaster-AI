@@ -1,0 +1,32 @@
+{
+  "entities": {
+    "VocabEntry": {
+      "title": "Vocabulary Entry",
+      "description": "Represents a single vocabulary word or grammar point extracted from a screenshot.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "word": { "type": "string" },
+        "phonetic": { "type": "string" },
+        "translation": { "type": "string" },
+        "examples": { 
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "grammarPoints": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "creatorId": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["word", "translation", "creatorId", "createdAt"]
+    }
+  },
+  "firestore": {
+    "vocab": {
+      "schema": "VocabEntry",
+      "description": "Global collection of vocabulary words."
+    }
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "name": "VocabMaster AI",
+  "description": "An AI-powered English learning app that extracts vocabulary from screenshots, manages a cloud database, and provides interactive quizzes with voice recognition.",
+  "requestFramePermissions": [
+    "camera",
+    "microphone"
+  ],
+  "majorCapabilities": [
+    "AI Vision OCR",
+    "Cloud Synchronization",
+    "Voice-to-Text Quiz"
+  ]
+}
