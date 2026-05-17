@@ -32,7 +32,8 @@ export function QuizPanel() {
 
       recognitionRef.current.onresult = (event: any) => {
         const text = event.results[0][0].transcript;
-        setUserInput(text.toLowerCase().replace(/[.\s]/g, ''));
+        // Preserve spaces for phrases, but convert to lowercase and trim
+        setUserInput(text.toLowerCase().trim());
         setIsListening(false);
       };
 
@@ -130,6 +131,7 @@ export function QuizPanel() {
     if (isListening) {
       recognitionRef.current?.stop();
     } else {
+      setUserInput(""); // Clear input as requested when starting to listen
       setIsListening(true);
       recognitionRef.current?.start();
     }

@@ -26,25 +26,83 @@ export function ImportPanel() {
 
     const reader = new FileReader();
     reader.onload = async (event) => {
-      const base64 = (event.target?.result as string).split(',')[1];
-      setPreviewImage(event.target?.result as string);
-      processImage(base64);
+      const dataUrl = event.target?.result as string;
+      
+      // Compress image before sending
+      try {
+        const compressedDataUrl = await compressImage(dataUrl);
+        const mimeType = compressedDataUrl.split(';')[0].split(':')[1];
+        const base64 = compressedDataUrl.split(',')[1];
+        setPreviewImage(compressedDataUrl);
+        processImage(base64, mimeType);
+      } catch (err) {
+        console.error("Compression failed:", err);
+        // Fallback to original if compression fails
+        const mimeType = dataUrl.split(';')[0].split(':')[1];
+        const base64 = dataUrl.split(',')[1];
+        setPreviewImage(dataUrl);
+        processImage(base64, mimeType);
+      }
     };
     reader.readAsDataURL(file);
   };
 
-  const processImage = async (base64: string) => {
+  const compressImage = (dataUrl: string): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      img.src = dataUrl;
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        let width = img.width;
+        let height = img.height;
+        const max_size = 1200; // Reduced for mobile reliability
+
+        if (width > height) {
+          if (width > max_size) {
+            height *= max_size / width;
+            width = max_size;
+          }
+        } else {
+          if (height > max_size) {
+            width *= max_size / height;
+            height = max_size;
+          }
+        }
+
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        ctx?.drawImage(img, 0, 0, width, height);
+        resolve(canvas.toDataURL('image/jpeg', 0.8)); // Convert to JPG with 80% quality
+      };
+      img.onerror = reject;
+    });
+  };
+
+  const processImage = async (base64: string, mimeType: string) => {
     setIsUploading(true);
     try {
-      const result = await extractVocabFromImage(base64);
+      const result = await extractVocabFromImage(base64, mimeType);
+      if (!result || result.length === 0) {
+        toast.error("未能從圖片中辨識出單字，請換一張試試");
+        return;
+      }
       setExtractedItems(result.map((item: any) => ({
         ...item,
         id: Math.random().toString(36).substr(2, 9)
       })));
       toast.success("辨識完成！");
-    } catch (error) {
+    } catch (error: any) {
       console.error(error);
-      toast.error("辨識失敗，請稍後再試");
+      const errorMsg = error?.message || "";
+      if (errorMsg.includes("429")) {
+        toast.error("系統繁忙中，請稍候再試 (Error 429)");
+      } else if (errorMsg.includes("413")) {
+        toast.error("圖片檔案太大了");
+      } else {
+        const detail = errorMsg ? `: ${errorMsg.slice(0, 50)}` : "";
+        toast.error(`辨識失敗，請確認網路連線或換張圖片再試${detail}`);
+      }
     } finally {
       setIsUploading(false);
     }
@@ -107,7 +165,7 @@ export function ImportPanel() {
           type="file" 
           className="hidden" 
           ref={fileInputRef} 
-          accept="image/*" 
+          accept="image/png, image/jpeg, image/jpg, image/webp" 
           onChange={handleFileChange}
         />
         <CardContent 

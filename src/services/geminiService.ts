@@ -1,30 +1,34 @@
 import { GoogleGenAI, Type } from "@google/genai";
 
-export async function extractVocabFromImage(base64Image: string) {
-  const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+export async function extractVocabFromImage(base64Image: string, mimeType: string = "image/png") {
+  // In AI Studio environment, process.env.GEMINI_API_KEY is injected into the frontend
+  const apiKey = process.env.GEMINI_API_KEY;
+  
+  if (!apiKey) {
+    throw new Error("請先在 Secrets 中設定 GEMINI_API_KEY");
+  }
+
+  const ai = new GoogleGenAI({ apiKey });
+  
   try {
-    const prompt = `Analyze this language learning screenshot. 
-    1. Identification:
-       - Look for text in "Standard Answer" (標準答案) labels.
-       - Look for suggested correct phrases mentioned in pink/red correction boxes or explanations (e.g., "建議使用...").
-       - Look for HIGHLIGHTED words in colorful boxes.
-    2. Extraction Logic: 
-       - If a highlighted word is part of a larger meaningful phrase or sentence being taught, extract the whole phrase.
-       - Extract "Standard Answers" exactly as they appear (ignore generic filler words like "Any" if it makes the phrase cleaner, but keep meaningful chunks).
-       - Preference: Multi-word natural expressions > individual words.
-    3. Output Format: Provide JSON array with:
-       - word: The clean phrase or word.
-       - phonetic: The IPA symbols.
-       - translation: Traditional Chinese translation.
-       - examples: 1-2 realistic usage examples.
+    const prompt = `You are a specialist in extracting language learning data from screenshots.
+    Analyze this dictionary or quiz app screenshot and extract the primary vocabulary being shown.
     
-    Priority: Extract multiple items if there are clear distinct phrases being taught (e.g., a "Standard Answer" and a "Suggested alternative").`;
+    Extraction Targets:
+    1. Main Word: The prominent word being defined or tested.
+    2. Phonetics: Look for text between slashes (e.g., /.../) or near speaker icons.
+    3. Translation: The Traditional Chinese (繁體中文) explanation.
+    4. Example Sentences: Extract 1-2 realistic usage sentences if shown.
+    
+    Rules:
+    - If no vocabulary is clearly found, return an empty array [].
+    - Always output valid JSON using the responseSchema.`;
 
     const response = await ai.models.generateContent({
       model: "gemini-3-flash-preview",
       contents: {
         parts: [
-          { inlineData: { data: base64Image, mimeType: "image/png" } },
+          { inlineData: { data: base64Image, mimeType } },
           { text: prompt }
         ]
       },
@@ -38,10 +42,10 @@ export async function extractVocabFromImage(base64Image: string) {
               word: { type: Type.STRING },
               phonetic: { type: Type.STRING },
               translation: { type: Type.STRING },
-              examples: { 
+              examples: {
                 type: Type.ARRAY,
                 items: { type: Type.STRING }
-              },
+              }
             },
             required: ["word", "phonetic", "translation", "examples"]
           }
@@ -49,9 +53,15 @@ export async function extractVocabFromImage(base64Image: string) {
       }
     });
 
-    return JSON.parse(response.text || "[]");
-  } catch (error) {
-    console.error("Gemini Error:", error);
+    const text = response.text;
+    if (!text) return [];
+    return JSON.parse(text);
+  } catch (error: any) {
+    console.error("Gemini Frontend Error:", error);
+    // Handle API key validation errors specifically for the user
+    if (error.message?.includes("API key not valid") || error.message?.includes("403") || error.message?.includes("400")) {
+      throw new Error(`API Key 無效或不正確 (${error.message.slice(0, 50)}...)。請在右上角 Secrets 重新選擇有效的金鑰並儲存。`);
+    }
     throw error;
   }
 }

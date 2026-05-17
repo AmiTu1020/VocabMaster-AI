@@ -1,20 +1,42 @@
-<div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
-</div>
+# VocabMaster AI - 專案開發記錄與需求說明
 
-# Run and deploy your AI Studio app
+本文件記錄了 VocabMaster AI 的核心功能與後續優化開發項。
 
-This contains everything you need to run your app locally.
+## 🚀 核心功能清單
 
-View your app in AI Studio: https://ai.studio/apps/4f37053a-1c5e-4e05-8b59-15c6f6f036e0
+### 1. 智能圖片擷取 (AI OCR & Dictionary)
+- **輸入方式**：支援拖曳或點擊上傳手機螢幕截圖。
+- **AI 處理 (Gemini 1.5 Flash)**：
+    - 從截圖中自動辨識英文單字/片語。
+    - 生成 Traditional Chinese (繁體中文) 翻譯。
+    - 生成國際音標 (IPA)。
+- **圖片優化**：
+    - **自動縮放**：上傳前自動將圖片最長邊縮放至 1200px，確保手機 Chrome 瀏覽器上傳的穩定性與辨識速度。
+- **錯誤偵測**：強化 API Key 狀態與辨識失敗的錯誤訊息提示。
 
-## Run Locally
+### 2. 雲端單字本 (Library Management)
+- **數據同步**：與 Firebase Firestore 連動，即時儲存辨識結果。
+- **管理動作**：
+    - 支持單字詳情查看。
+    - **發音功能**：整合 Web Speech API，提供標準美式發音。
+    - **刪除功能**：可從雲端單字本中移除已學會的詞彙。
 
-**Prerequisites:**  Node.js
+### 3. AI 智慧測驗 (Adaptive Quiz)
+- **題目機制**：系統從資料庫隨機抽取單字生成拼寫測驗。
+- **回答方式**：
+    - **手動輸入**：透過虛擬或實體鍵盤作答。
+    - **麥克風語音輸入 (STT)**：
+        - **自動連動**：點擊辨識時自動清空目前的輸入框欄位。
+        - **片語優化**：語音辨識結果會保留空格（如 "get home"），不再自動壓縮字元，確保片語作答正確。
+- **提示系統**：
+    - 顯示單字字母長度。
+    - 錯誤反饋：即時標示打錯的字母，引導更正。
 
+## 🛠 技術規格
+- **前端框架**: React + Tailwind CSS + Framer Motion (動畫)
+- **人工智慧**: Google Gemini 1.5 Flash (用於圖片辨識與分析)
+- **後端資料庫**: Firebase Firestore (雲端單字儲存)
+- **瀏覽器 API**: Web Speech API (語音合成 / 語音辨識)
 
-1. Install dependencies:
-   `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
-3. Run the app:
-   `npm run dev`
+## 🔑 環境設定
+- 使用 **`GEMINI_API_KEY`** 進行辨識，支援於 AI Studio 的 Secrets 管理介面隨時切換 AI Studio Free Tier 或付費層級。
