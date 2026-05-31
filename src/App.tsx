@@ -48,8 +48,8 @@ export default function App() {
             <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary text-primary-foreground shadow-lg">
               <BrainCircuit className="h-6 w-6" />
             </div>
-            <h1 className="text-xl font-bold tracking-tight bg-gradient-to-r from-primary to-blue-600 bg-clip-text text-transparent">
-              VocabMaster AI
+            <h1 className="text-sm font-bold sm:text-xl tracking-tight bg-gradient-to-r from-primary to-blue-600 bg-clip-text text-transparent whitespace-nowrap">
+              English Vocab Master
             </h1>
           </div>
           
@@ -83,7 +83,7 @@ export default function App() {
              <div className="w-20 h-20 bg-slate-100 rounded-full flex items-center justify-center mb-6">
                 <BrainCircuit className="h-10 w-10 text-slate-400" />
              </div>
-             <h2 className="text-2xl font-bold mb-2">歡迎使用 VocabMaster AI</h2>
+             <h2 className="text-2xl font-bold mb-2">歡迎使用 English Vocab Master</h2>
              <p className="text-slate-500 mb-8 text-center max-w-sm px-6">
                 這款應用利用人工智慧幫助您從手機截圖中快速學習英文。請先登入以同步您的雲端單字庫。
              </p>

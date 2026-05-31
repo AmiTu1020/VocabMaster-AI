@@ -12,13 +12,18 @@ export async function extractVocabFromImage(base64Image: string, mimeType: strin
   
   try {
     const prompt = `You are a specialist in extracting language learning data from screenshots.
-    Analyze this dictionary or quiz app screenshot and extract the primary vocabulary being shown.
+    Analyze this dictionary or quiz app screenshot and extract the primary vocabulary items being shown.
     
-    Extraction Targets:
-    1. Main Word: The prominent word being defined or tested.
+    Critical Instruction:
+    - If a screenshot shows a group of related words (e.g., words starting with the same prefix like "underwater", "underground", "underworld" listed under "under-"), extract each one as a SEPARATE entry.
+    - Do NOT combine them into a single entry if they are distinct words.
+    - Each entry must be a complete word, not just a prefix/suffix.
+    
+    Extraction Targets for each entry:
+    1. Main Word: The word being defined or listed.
     2. Phonetics: Look for text between slashes (e.g., /.../) or near speaker icons.
     3. Translation: The Traditional Chinese (繁體中文) explanation.
-    4. Example Sentences: Extract 1-2 realistic usage sentences if shown.
+    4. Example Sentences: Extract 1-3 realistic usage sentences if shown.
     
     Rules:
     - If no vocabulary is clearly found, return an empty array [].

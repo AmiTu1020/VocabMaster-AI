@@ -9,6 +9,7 @@
         "word": { "type": "string" },
         "phonetic": { "type": "string" },
         "translation": { "type": "string" },
+        "isHard": { "type": "boolean", "description": "Whether the user marks this as hard to remember." },
         "examples": { 
           "type": "array",
           "items": { "type": "string" }

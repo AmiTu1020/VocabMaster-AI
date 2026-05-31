@@ -5,6 +5,8 @@ export interface VocabEntry {
   translation: string;
   examples: string[];
   grammarPoints?: string[];
+  creatorId: string;
+  isHard?: boolean;
   createdAt: any; // Firestore Timestamp
 }
 

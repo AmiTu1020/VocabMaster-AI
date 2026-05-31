@@ -1,7 +1,7 @@
 import React, { useState, useRef } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Upload, Volume2, Save, Loader2, Image as ImageIcon, RefreshCw } from "lucide-react";
+import { Upload, Volume2, Save, Loader2, Image as ImageIcon, RefreshCw, Star } from "lucide-react";
 import { extractVocabFromImage } from "@/services/geminiService";
 import { db, auth } from "@/lib/firebase";
 import { collection, addDoc, serverTimestamp, query, where, getDocs } from "firebase/firestore";
@@ -13,16 +13,46 @@ export function ImportPanel() {
   const [isSaving, setIsSaving] = useState<string | null>(null);
   const [extractedItems, setExtractedItems] = useState<VocabEntry[]>([]);
   const [previewImage, setPreviewImage] = useState<string | null>(null);
+  const [hasExtractedThisSession, setHasExtractedThisSession] = useState(false);
+  const [showDeletionBanner, setShowDeletionBanner] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const currentFileHandleRef = useRef<any>(null);
+
+  const toggleHardLocal = (id: string) => {
+    setExtractedItems(prev => prev.map(item => 
+      item.id === id ? { ...item, isHard: !item.isHard } : item
+    ));
+  };
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    currentFileHandleRef.current = null; // Traditional input doesn't provide handles for deletion
+    handleSelectedFile(file);
+    // Reset input value so the same file can be selected again if needed
+    e.target.value = '';
+  };
 
+  const isChromeBrowser = () => {
+    const ua = window.navigator.userAgent.toLowerCase();
+    // Desktop/Mobile Chrome check
+    const isChrome = ua.includes('chrome') || ua.includes('chromium');
+    const isSamsung = ua.includes('samsungbrowser');
+    const isEdge = ua.includes('edg');
+    const isOpera = ua.includes('opr') || ua.includes('opera');
+    return isChrome && !isSamsung && !isEdge && !isOpera;
+  };
+
+  const handleSelectedFile = async (file: File) => {
     if (!file.type.startsWith('image/')) {
       toast.error("請上傳圖片檔案");
       return;
     }
+    
+    // Reset state for new image
+    setExtractedItems([]);
+    setShowDeletionBanner(false);
+    setHasExtractedThisSession(false);
 
     const reader = new FileReader();
     reader.onload = async (event) => {
@@ -45,6 +75,37 @@ export function ImportPanel() {
       }
     };
     reader.readAsDataURL(file);
+  };
+
+  const handleImportClick = async () => {
+    // Attempt to use File System Access API to allow Chrome to remember the folder
+    if ('showOpenFilePicker' in window) {
+      try {
+        const [handle] = await (window as any).showOpenFilePicker({
+          id: 'vocab-master-import', // Using a consistent ID helps Chrome remember the last folder
+          types: [
+            {
+              description: 'Images',
+              accept: {
+                'image/*': ['.png', '.gif', '.jpeg', '.jpg', '.webp'],
+              },
+            },
+          ],
+          multiple: false,
+        });
+        currentFileHandleRef.current = handle;
+        const file = await handle.getFile();
+        handleSelectedFile(file);
+      } catch (err: any) {
+        // User cancelled or other error, fallback to traditional input if it wasn't a cancellation
+        if (err.name !== 'AbortError') {
+          console.error("showOpenFilePicker error:", err);
+          fileInputRef.current?.click();
+        }
+      }
+    } else {
+      fileInputRef.current?.click();
+    }
   };
 
   const compressImage = (dataUrl: string): Promise<string> => {
@@ -91,6 +152,7 @@ export function ImportPanel() {
         ...item,
         id: Math.random().toString(36).substr(2, 9)
       })));
+      setHasExtractedThisSession(true);
       toast.success("辨識完成！");
     } catch (error: any) {
       console.error(error);
@@ -114,6 +176,42 @@ export function ImportPanel() {
     window.speechSynthesis.speak(utterance);
   };
 
+  const attemptFileDeletion = async () => {
+    if (currentFileHandleRef.current) {
+      const filename = currentFileHandleRef.current.name;
+      const handle = currentFileHandleRef.current;
+      
+      try {
+        if (typeof handle.remove !== 'function') {
+          toast.error("目前瀏覽器不支援直接刪除功能");
+          return;
+        }
+
+        // Request permission explicitly for deletion
+        const permissionStatus = await handle.requestPermission({ mode: 'readwrite' });
+        
+        if (permissionStatus === 'granted') {
+          await handle.remove();
+          toast.success(`已成功刪除截圖：${filename}`);
+        } else {
+          toast.info("已取消檔案刪除");
+        }
+      } catch (err: any) {
+        console.error("Deletion error:", err);
+        if (err.name === 'SecurityError' || err.name === 'NotAllowedError') {
+          toast.error("刪除失敗：權限不足", {
+            description: "若您使用的是手機，請確保在 Chrome 內開啟並授予權限。"
+          });
+        } else {
+          toast.error(`無法刪除：${err.message}`);
+        }
+      } finally {
+        currentFileHandleRef.current = null;
+        setShowDeletionBanner(false);
+      }
+    }
+  };
+
   const saveToCloud = async (item: VocabEntry) => {
     if (!auth.currentUser) {
       toast.error("請先登入");
@@ -122,6 +220,9 @@ export function ImportPanel() {
 
     setIsSaving(item.id);
     try {
+      // Determine if this is the last item before state update
+      const isLastItem = extractedItems.length === 1;
+
       // Duplicate check
       const q = query(
         collection(db, "vocab"),
@@ -131,26 +232,33 @@ export function ImportPanel() {
       const querySnapshot = await getDocs(q);
       
       if (!querySnapshot.empty) {
-        toast.info(`單字 "${item.word}" 已存在於您的雲端庫中`);
-        // We could ask to update here, but for now we'll just prevent duplicate
+        toast.warning(`提醒：單字 "${item.word}" 已存在於您的雲端庫中`, {
+          duration: 4000,
+        });
+        handleItemCompleted(item);
+        
+        if (isLastItem) {
+          await handleCompletionCleanup();
+        }
+        
         setIsSaving(null);
         return;
       }
 
+      const { id, ...itemToSave } = item;
       await addDoc(collection(db, "vocab"), {
-        ...item,
+        ...itemToSave,
+        isHard: item.isHard || false,
         creatorId: auth.currentUser.uid,
         createdAt: serverTimestamp(),
       });
       toast.success(`已將 "${item.word}" 加入雲端資料庫`);
-      setExtractedItems(prev => {
-        const newItems = prev.filter(i => i.id !== item.id);
-        if (newItems.length === 0) {
-          setPreviewImage(null); // Clear preview when all items saved
-        }
-        return newItems;
-      });
-  } catch (error) {
+      handleItemCompleted(item);
+
+      if (isLastItem) {
+        await handleCompletionCleanup();
+      }
+    } catch (error) {
       console.error(error);
       toast.error("存檔失敗");
     } finally {
@@ -158,28 +266,96 @@ export function ImportPanel() {
     }
   };
 
+  const handleCompletionCleanup = async () => {
+    const fileHandle = currentFileHandleRef.current;
+    
+    // Force clear results list immediately
+    setExtractedItems([]);
+    setPreviewImage(null);
+    setHasExtractedThisSession(false);
+    setShowDeletionBanner(false);
+
+    // Chrome specific deletion prompt
+    if (fileHandle && isChromeBrowser()) {
+      const filename = fileHandle.name;
+      if (window.confirm(`所有單字已存入雲端！\n\n是否從您的裝置中刪除這張截圖 [${filename}]？`)) {
+        await attemptFileDeletion();
+      } else {
+        currentFileHandleRef.current = null;
+      }
+    } else {
+      currentFileHandleRef.current = null;
+      toast.success("所有單字已成功同步到雲端！");
+    }
+    
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const handleItemCompleted = (itemToRemove: VocabEntry) => {
+    setExtractedItems(prev => prev.filter(i => i.id !== itemToRemove.id));
+  };
+
+  const clearResults = () => {
+    if (currentFileHandleRef.current && isChromeBrowser()) {
+      const filename = currentFileHandleRef.current.name;
+      if (window.confirm(`是否要放棄目前的辨識結果，並嘗試刪除裝置中的原始圖片 [${filename}]？`)) {
+        attemptFileDeletion();
+      } else {
+        currentFileHandleRef.current = null;
+      }
+    } else {
+      currentFileHandleRef.current = null;
+    }
+    setExtractedItems([]);
+    setPreviewImage(null);
+    setHasExtractedThisSession(false);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+    toast.info("已清空辨識結果");
+  };
+
   return (
     <div className="space-y-6">
-      <Card className={`border-dashed border-2 bg-slate-50/50 hover:bg-slate-50 transition-colors cursor-pointer overflow-hidden relative ${previewImage ? 'border-none bg-slate-100 shadow-inner' : ''}`}>
+      <Card 
+        id="import-drop-zone"
+        className={`border-dashed border-2 bg-slate-50/50 hover:bg-slate-50 transition-colors cursor-pointer overflow-hidden relative ${previewImage ? 'border-none bg-slate-100 shadow-inner' : ''}`}
+      >
         <input 
           type="file" 
+          id="file-input-hidden"
           className="hidden" 
           ref={fileInputRef} 
           accept="image/png, image/jpeg, image/jpg, image/webp" 
           onChange={handleFileChange}
         />
         <CardContent 
+          id="import-content-area"
           className={`flex flex-col items-center justify-center text-center transition-all duration-500 ${previewImage ? 'p-0 min-h-[700px]' : 'p-12 h-64'}`}
-          onClick={() => fileInputRef.current?.click()}
+          onClick={handleImportClick}
         >
           {previewImage ? (
             <div className="w-full h-full flex items-center justify-center bg-slate-900 overflow-hidden group">
               <img src={previewImage} alt="Preview" className="max-w-full max-h-[700px] object-contain shadow-2xl transition-transform duration-300 group-hover:scale-[1.02]" />
               
-              <div className="absolute top-4 right-4 z-20">
-                <div className="flex items-center gap-2 bg-black/50 backdrop-blur-md px-4 py-2 rounded-full shadow-lg border border-white/20 text-white hover:bg-black/70 transition-all scale-100 active:scale-95">
+              <div className="absolute top-4 right-4 z-20 flex flex-col gap-2">
+                <div 
+                  className="flex items-center gap-2 bg-black/50 backdrop-blur-md px-4 py-2 rounded-full shadow-lg border border-white/20 text-white hover:bg-black/70 transition-all scale-100 active:scale-95"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleImportClick();
+                  }}
+                >
                   <RefreshCw className="h-4 w-4" />
                   <span className="text-xs font-bold">更換圖片</span>
+                </div>
+                <div 
+                  className="flex items-center gap-2 bg-red-500/80 backdrop-blur-md px-4 py-2 rounded-full shadow-lg border border-white/20 text-white hover:bg-red-600 transition-all scale-100 active:scale-95"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    clearResults();
+                  }}
+                >
+                  <RefreshCw className="h-4 w-4 rotate-45" />
+                  <span className="text-xs font-bold">放棄辨識</span>
                 </div>
               </div>
             </div>
@@ -216,9 +392,20 @@ export function ImportPanel() {
                     <CardTitle className="text-xl text-primary">{item.word}</CardTitle>
                     <CardDescription className="font-mono text-xs">{item.phonetic}</CardDescription>
                   </div>
-                  <Button variant="ghost" size="icon" onClick={() => speak(item.word)} className="text-slate-400 hover:text-primary">
-                    <Volume2 className="h-5 w-5" />
-                  </Button>
+                  <div className="flex items-center gap-1">
+                    <Button 
+                      variant="ghost" 
+                      size="icon" 
+                      id={`star-item-${item.id}`}
+                      onClick={() => toggleHardLocal(item.id)} 
+                      className={`h-9 w-9 transition-all duration-200 ${item.isHard ? 'text-amber-500 hover:text-amber-600 scale-110' : 'text-slate-300 hover:text-amber-400'}`}
+                    >
+                      <Star id={`star-icon-${item.id}`} className={`h-5 w-5 transition-all ${item.isHard ? 'fill-amber-500 text-amber-500' : 'text-slate-300'}`} />
+                    </Button>
+                    <Button id={`speak-btn-${item.id}`} variant="ghost" size="icon" onClick={() => speak(item.word)} className="text-slate-400 hover:text-primary">
+                      <Volume2 className="h-5 w-5" />
+                    </Button>
+                  </div>
                 </div>
               </CardHeader>
               <CardContent>
@@ -229,6 +416,7 @@ export function ImportPanel() {
                   ))}
                 </div>
                 <Button 
+                  id={`save-cloud-btn-${item.id}`}
                   className="w-full mt-4 bg-slate-900 hover:bg-slate-800 text-white gap-2 h-9"
                   onClick={() => saveToCloud(item)}
                   disabled={isSaving === item.id}
