@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Volume2, Trash2, Search, BookOpen, Loader2, Play, Pause, Square, Star, StarOff, Filter } from "lucide-react";
+import { Volume2, Trash2, Search, BookOpen, Loader2, Play, Pause, Square, Star, StarOff, Filter, Sparkles, ChevronDown, ChevronUp } from "lucide-react";
 import { db, auth } from "@/lib/firebase";
 import { collection, query, where, onSnapshot, deleteDoc, doc, orderBy, updateDoc, setDoc } from "firebase/firestore";
 import { toast } from "sonner";
@@ -12,6 +12,8 @@ export function LibraryPanel() {
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
   const [filterMode, setFilterMode] = useState<'all' | 'hard'>('all');
+  const [quizFilter, setQuizFilter] = useState<'all' | 'hasQuiz' | 'noQuiz'>('all');
+  const [expandedChallengeId, setExpandedChallengeId] = useState<string | null>(null);
   const [touringIndex, setTouringIndex] = useState<number>(-1);
   const [isPaused, setIsPaused] = useState(false);
   const tourTimeoutRef = React.useRef<NodeJS.Timeout | null>(null);
@@ -26,7 +28,13 @@ export function LibraryPanel() {
     const matchesSearch = item.word.toLowerCase().includes(searchTerm.toLowerCase()) ||
                          item.translation.includes(searchTerm);
     const matchesFilter = filterMode === 'all' || item.isHard === true;
-    return matchesSearch && matchesFilter;
+    
+    // Check quiz filter condition
+    const matchesQuiz = quizFilter === 'all' ||
+                        (quizFilter === 'hasQuiz' && !!item.quizChallenge) ||
+                        (quizFilter === 'noQuiz' && !item.quizChallenge);
+
+    return matchesSearch && matchesFilter && matchesQuiz;
   });
 
   // Vocabulary Tour Logic
@@ -168,21 +176,18 @@ export function LibraryPanel() {
     );
   }
 
-  if (!auth.currentUser) {
-    return (
-      <div className="flex flex-col items-center justify-center py-20 text-slate-400">
-        <BookOpen className="h-12 w-12 mb-4 opacity-20" />
-        <p>請先登入以查看雲端單字庫</p>
-      </div>
-    );
-  }
+  // Stats for classification
+  const totalCount = vocab.length;
+  const hardCount = vocab.filter(item => item.isHard).length;
+  const withQuizCount = vocab.filter(item => item.quizChallenge).length;
+  const withoutQuizCount = Math.max(0, totalCount - withQuizCount);
 
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between sticky top-[64px] z-20 bg-white/95 backdrop-blur-md py-3 border-b border-slate-100 -mx-4 px-4 sm:-mx-1 sm:px-1 shadow-sm sm:shadow-none">
         <h2 className="text-sm font-bold text-slate-500 flex items-center gap-2">
           <BookOpen className="h-4 w-4" />
-          雲端存檔
+          雲端存檔 / 智慧分類
         </h2>
         <div className="flex items-center gap-2">
           {filteredVocab.length > 0 && (
@@ -208,9 +213,37 @@ export function LibraryPanel() {
           )}
           <div className="px-3 py-1 bg-slate-100 rounded-full border border-slate-200 shadow-sm">
             <span className="text-xs font-bold text-slate-500">
-              單字總數: <span className="text-primary">{filteredVocab.length}</span>
+              篩選後單字: <span className="text-primary">{filteredVocab.length}</span> / {totalCount}
             </span>
           </div>
+        </div>
+      </div>
+
+      {/* Classification Bento Grid Overview */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+        <div className="bg-slate-50 border border-slate-100 rounded-xl p-3 text-center sm:text-left transition-all shadow-sm">
+          <p className="text-[10px] font-bold text-slate-400">總儲存單字</p>
+          <p className="text-lg font-extrabold text-slate-800">{totalCount} <span className="text-xs font-medium text-slate-400">字</span></p>
+        </div>
+        <div className="bg-amber-50 md:bg-amber-50/50 border border-amber-100 rounded-xl p-3 text-center sm:text-left transition-all shadow-sm">
+          <p className="text-[10px] font-bold text-amber-600 flex items-center justify-center sm:justify-start gap-1">
+            <Star className="h-3 w-3 fill-amber-500 text-amber-500" /> 常忘標記
+          </p>
+          <p className="text-lg font-extrabold text-amber-700">{hardCount} <span className="text-xs font-medium text-slate-400">字</span></p>
+        </div>
+        <div className="bg-purple-50 md:bg-purple-50/50 border border-purple-100/80 rounded-xl p-3 text-center sm:text-left transition-all shadow-sm">
+          <p className="text-[10px] font-bold text-purple-600 flex items-center justify-center sm:justify-start gap-1">
+            <Sparkles className="h-3 w-3 text-purple-500 animate-pulse" /> 已存 AI 測驗
+          </p>
+          <p className="text-lg font-extrabold text-purple-700">
+            {withQuizCount} <span className="text-xs font-medium text-purple-400">({totalCount > 0 ? Math.round((withQuizCount / totalCount) * 100) : 0}%)</span>
+          </p>
+        </div>
+        <div className="bg-slate-50 border border-slate-100 rounded-xl p-3 text-center sm:text-left transition-all shadow-sm">
+          <p className="text-[10px] font-bold text-slate-400 flex items-center justify-center sm:justify-start gap-1">
+            待生成測驗
+          </p>
+          <p className="text-lg font-extrabold text-slate-600">{withoutQuizCount} <span className="text-xs font-medium text-slate-400">字</span></p>
         </div>
       </div>
 
@@ -219,43 +252,73 @@ export function LibraryPanel() {
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
           <input 
             type="text" 
-            placeholder="搜尋單字或翻譯..." 
+            placeholder="搜尋單字、音標、或中文翻譯..." 
             className="w-full bg-white border border-slate-200 rounded-xl h-11 pl-10 pr-4 focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all shadow-sm"
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
           />
         </div>
         
-        <div className="flex gap-2 p-1 bg-slate-100 rounded-lg w-fit">
-          <Button 
-            variant={filterMode === 'all' ? 'secondary' : 'ghost'} 
-            size="sm" 
-            onClick={() => setFilterMode('all')}
-            className={`h-8 rounded-md px-3 text-xs font-bold transition-all ${filterMode === 'all' ? 'bg-white shadow-sm text-primary' : 'text-slate-500 hover:text-slate-700'}`}
-          >
-            全部單字
-          </Button>
-          <Button 
-            variant={filterMode === 'hard' ? 'secondary' : 'ghost'} 
-            size="sm" 
-            onClick={() => setFilterMode('hard')}
-            className={`h-8 rounded-md px-3 text-xs font-bold transition-all flex items-center gap-1.5 ${filterMode === 'hard' ? 'bg-white shadow-sm text-amber-600' : 'text-slate-500'}`}
-          >
-            <Star className={`h-3 w-3 ${filterMode === 'hard' ? 'fill-amber-500 text-amber-500' : 'text-slate-400'}`} />
-            常忘單字
-          </Button>
+        {/* Dual Axis Filtering Ribbon */}
+        <div className="flex flex-col gap-2 bg-slate-50 border border-slate-100 p-2 rounded-xl">
+          <div className="flex flex-wrap items-center gap-1.5">
+            <span className="text-[10px] font-bold text-slate-400 w-12 shrink-0">常忘分類:</span>
+            <div className="flex gap-1 p-0.5 bg-slate-200/60 rounded-md">
+              <button 
+                onClick={() => setFilterMode('all')}
+                className={`px-2.5 py-1 text-xs font-semibold rounded-sm transition-all ${filterMode === 'all' ? 'bg-white text-primary shadow-xs font-bold' : 'text-slate-500 hover:text-slate-800'}`}
+              >
+                全部常忘狀態
+              </button>
+              <button 
+                onClick={() => setFilterMode('hard')}
+                className={`px-2.5 py-1 text-xs font-semibold rounded-sm transition-all flex items-center gap-1 ${filterMode === 'hard' ? 'bg-white text-amber-600 shadow-xs font-bold' : 'text-slate-500 hover:text-amber-600'}`}
+              >
+                <Star className="h-3 w-3 fill-amber-500 text-amber-500" />
+                常忘單字
+              </button>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-1.5 border-t border-slate-200/50 pt-2">
+            <span className="text-[10px] font-bold text-slate-400 w-12 shrink-0">測驗分類:</span>
+            <div className="flex gap-1 p-0.5 bg-slate-200/60 rounded-md">
+              <button 
+                onClick={() => setQuizFilter('all')}
+                className={`px-2.5 py-1 text-xs font-semibold rounded-sm transition-all ${quizFilter === 'all' ? 'bg-white text-primary shadow-xs font-bold' : 'text-slate-500 hover:text-slate-800'}`}
+              >
+                全部測驗狀態
+              </button>
+              <button 
+                onClick={() => setQuizFilter('hasQuiz')}
+                className={`px-2.5 py-1 text-xs font-semibold rounded-sm transition-all flex items-center gap-1 ${quizFilter === 'hasQuiz' ? 'bg-white text-purple-600 shadow-xs font-bold' : 'text-slate-500 hover:text-purple-600'}`}
+              >
+                <Sparkles className="h-3 w-3 text-purple-500" />
+                已存 AI 測驗 ({withQuizCount})
+              </button>
+              <button 
+                onClick={() => setQuizFilter('noQuiz')}
+                className={`px-2.5 py-1 text-xs font-semibold rounded-sm transition-all flex items-center gap-1 ${quizFilter === 'noQuiz' ? 'bg-white text-slate-750 shadow-xs font-bold' : 'text-slate-500 hover:text-slate-700'}`}
+              >
+                待生成測驗 ({withoutQuizCount})
+              </button>
+            </div>
+          </div>
         </div>
       </div>
 
       {filteredVocab.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-20 text-slate-400">
           <BookOpen className="h-12 w-12 mb-4 opacity-20" />
-          <p>{searchTerm ? "找不到符合的單字" : "目前還沒有已存檔的單字"}</p>
+          <p>{searchTerm ? "找不到符合此篩選條件的單字" : "目前還沒有已存檔的單字"}</p>
         </div>
       ) : (
         <div className="space-y-3">
           {filteredVocab.map((item, index) => {
             const isBeingToured = touringIndex === index;
+            const hasQuiz = !!item.quizChallenge;
+            const isChallengeExpanded = expandedChallengeId === item.id;
+
             return (
               <Card 
                 key={item.id} 
@@ -267,32 +330,103 @@ export function LibraryPanel() {
                 }`}
               >
                 <div className="flex items-center px-4 py-3">
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2">
-                    <span className="text-lg font-bold text-slate-900 truncate">{item.word}</span>
-                    <span className="text-xs font-mono text-slate-400 truncate">{item.phonetic}</span>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className="text-lg font-bold text-slate-900 truncate">{item.word}</span>
+                      {item.phonetic && (
+                        <span className="text-xs font-mono text-slate-400 truncate">{item.phonetic}</span>
+                      )}
+                    </div>
+                    <p className="text-sm text-slate-600 truncate">{item.translation}</p>
+                    
+                    {/* Inline classification tags */}
+                    <div className="flex flex-wrap gap-1 mt-1.5">
+                      {item.isHard && (
+                        <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px] font-bold bg-amber-50 text-amber-600 border border-amber-100">
+                          <Star className="h-2.5 w-2.5 fill-amber-500 text-amber-500" />
+                          常忘
+                        </span>
+                      )}
+                      {hasQuiz ? (
+                        <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px] font-bold bg-purple-50 text-purple-600 border border-purple-100">
+                          <Sparkles className="h-2.5 w-2.5 text-purple-500" />
+                          已存 AI 測驗
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px] font-medium bg-slate-50 text-slate-400 border border-slate-100">
+                          待生成測驗
+                        </span>
+                      )}
+                    </div>
                   </div>
-                  <p className="text-sm text-slate-600 truncate">{item.translation}</p>
+                  
+                  <div className="flex items-center gap-1 shrink-0 ml-4">
+                    <Button 
+                      variant="ghost" 
+                      size="icon" 
+                      onClick={() => toggleHard(item.id, !!item.isHard, item.word)} 
+                      className={`h-9 w-9 transition-all duration-200 ${item.isHard ? 'text-amber-500 hover:text-amber-600 scale-110' : 'text-slate-300 hover:text-amber-400'}`}
+                    >
+                      <Star className={`h-5 w-5 transition-all ${item.isHard ? 'fill-amber-500 text-amber-500' : 'text-slate-300'}`} />
+                    </Button>
+                    <Button variant="ghost" size="icon" onClick={() => speak(item.word)} className="h-9 w-9 text-slate-400 hover:text-primary">
+                      <Volume2 className="h-5 w-5" />
+                    </Button>
+                    <Button variant="ghost" size="icon" onClick={() => deleteItem(item.id, item.word)} className="h-9 w-9 text-slate-400 hover:text-red-500">
+                      <Trash2 className="h-5 w-5" />
+                    </Button>
+                  </div>
                 </div>
-                
-                <div className="flex items-center gap-1 shrink-0 ml-4">
-                  <Button 
-                    variant="ghost" 
-                    size="icon" 
-                    onClick={() => toggleHard(item.id, !!item.isHard, item.word)} 
-                    className={`h-9 w-9 transition-all duration-200 ${item.isHard ? 'text-amber-500 hover:text-amber-600 scale-110' : 'text-slate-300 hover:text-amber-400'}`}
-                  >
-                    <Star className={`h-5 w-5 transition-all ${item.isHard ? 'fill-amber-500 text-amber-500' : 'text-slate-300'}`} />
-                  </Button>
-                  <Button variant="ghost" size="icon" onClick={() => speak(item.word)} className="h-9 w-9 text-slate-400 hover:text-primary">
-                    <Volume2 className="h-5 w-5" />
-                  </Button>
-                  <Button variant="ghost" size="icon" onClick={() => deleteItem(item.id, item.word)} className="h-9 w-9 text-slate-400 hover:text-red-500">
-                    <Trash2 className="h-5 w-5" />
-                  </Button>
-                </div>
-              </div>
-            </Card>
+
+                {/* Collapsible Stored Quiz Challenge Section */}
+                {hasQuiz && (
+                  <div className="border-t border-slate-100 bg-slate-50/40">
+                    <button 
+                      onClick={() => setExpandedChallengeId(isChallengeExpanded ? null : item.id)}
+                      className="w-full flex items-center justify-between px-4 py-2 text-[11px] font-bold text-slate-500 hover:text-purple-600 hover:bg-slate-50 transition-all"
+                    >
+                      <span className="flex items-center gap-1.5">
+                        <Sparkles className="h-3 w-3 text-purple-500" />
+                        {isChallengeExpanded ? "隱藏內建 AI 情境題目" : "點此展開已存 AI 測驗情境題目"}
+                      </span>
+                      {isChallengeExpanded ? <ChevronUp className="h-3.5 w-3.5 text-slate-400" /> : <ChevronDown className="h-3.5 w-3.5 text-slate-400" />}
+                    </button>
+                    
+                    {isChallengeExpanded && (
+                      <div className="px-4 pb-4 pt-1.5 text-xs space-y-2 border-t border-slate-100/50 bg-slate-50/80">
+                        <div>
+                          <p className="font-extrabold text-slate-400 text-[10px] mb-0.5 uppercase tracking-wide">互動英文化境 (Sentence Challenge)：</p>
+                          <p className="font-medium text-slate-800 leading-relaxed bg-white border border-slate-200/60 p-2.5 rounded-lg font-mono">
+                            {item.quizChallenge.sentence}
+                          </p>
+                        </div>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                          <div>
+                            <p className="font-extrabold text-slate-400 text-[10px] mb-0.5 uppercase tracking-wide">中文情境對照 (Translation)：</p>
+                            <p className="text-slate-700 bg-white border border-slate-200/60 p-2.5 rounded-lg">
+                              {item.quizChallenge.contextChinese}
+                            </p>
+                          </div>
+                          <div>
+                            <p className="font-extrabold text-slate-400 text-[10px] mb-0.5 uppercase tracking-wide">挖空空格答案 (Correct Word)：</p>
+                            <p className="text-purple-700 font-extrabold bg-purple-50 border border-purple-100 p-2.5 rounded-lg font-mono">
+                              {item.quizChallenge.missingWord}
+                            </p>
+                          </div>
+                        </div>
+                        {item.quizChallenge.comment && (
+                          <div>
+                            <p className="font-extrabold text-slate-400 text-[10px] mb-0.5 uppercase tracking-wide">記憶聯想與引導解析 (Hint / Comment)：</p>
+                            <p className="text-slate-600 bg-amber-50/55 border border-amber-100/80 p-2.5 rounded-lg leading-relaxed italic">
+                              {item.quizChallenge.comment}
+                            </p>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </Card>
             );
           })}
         </div>

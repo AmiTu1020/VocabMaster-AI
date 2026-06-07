@@ -8,6 +8,7 @@ export interface VocabEntry {
   creatorId: string;
   isHard?: boolean;
   createdAt: any; // Firestore Timestamp
+  quizChallenge?: any;
 }
 
 export interface QuizQuestion {
