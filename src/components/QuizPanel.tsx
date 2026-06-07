@@ -757,7 +757,7 @@ export function QuizPanel() {
                 <div className="space-y-2">
                   <p className="font-extrabold text-slate-800 text-lg">AI 專屬考題建置中...</p>
                   <p className="text-xs text-slate-400 max-w-[200px] leading-relaxed mx-auto">
-                    我們正在為單字 <span className="font-semibold text-blue-500">"{currentWord.word}"</span> 精心編寫對應日常情境挑戰！
+                    我們正在為代表「<span className="font-semibold text-blue-500">{currentWord.translation}</span>」的單字精心編寫日常情境挑戰！
                   </p>
                 </div>
               </motion.div>
