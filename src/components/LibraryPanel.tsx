@@ -7,6 +7,91 @@ import { collection, query, where, onSnapshot, deleteDoc, doc, orderBy, updateDo
 import { toast } from "sonner";
 import { VocabEntry } from "@/types";
 
+// Helpers to clean up verbose/repetitive instruction text from display
+const getCleanContextChinese = (ctx: string | undefined): string => {
+  if (!ctx) return "";
+  let cleaned = ctx.trim();
+  
+  cleaned = cleaned.replace(/挑戰練習：?根據語意情境拼寫出正確的英文單字：?/g, "");
+  cleaned = cleaned.replace(/挑戰練習：?根據語意情境拼寫出正確的英文單字/g, "");
+  cleaned = cleaned.replace(/挑戰練習：?/g, "");
+  cleaned = cleaned.replace(/根據語意情境拼寫出正確的英文單字：?/g, "");
+  cleaned = cleaned.replace(/針對特定決定提出看法時，試著誠實、具建設性地回應：?/g, "");
+  cleaned = cleaned.replace(/當長官對你的決定提出質疑時，試著誠實、具建設性地回應：?/g, "");
+  cleaned = cleaned.replace(/句中空格之單字代表.*?填空挑戰.*?/g, "");
+  
+  cleaned = cleaned.trim();
+  if (/^[：:\s]*$/.test(cleaned) || cleaned === "挑戰與情境提示：" || cleaned === "挑戰與情境提示") {
+    return "";
+  }
+  return cleaned;
+};
+
+const getCleanTranslation = (trans: string | undefined, originalTranslation: string, sentence?: string): string => {
+  if (!trans) return originalTranslation;
+  let cleaned = trans.trim();
+  
+  // Strip various boilerplate text that the AI or fallback might have included
+  const removePatterns = [
+    /請根據上下文寫出對應作答[（\(]提示：單字中文為「.*?」[）\)]/g,
+    /請根據上下文寫出對應作答/g,
+    /[（\(]提示：單字中文為「.*?」[）\)]/g,
+    /提示：單字中文為「.*?」/g,
+    /提示：/g,
+    /[（\(]句中空格之單字代表「?.*?」?之語意，試著填空挑戰。?[）\)]/g,
+    /句中空格之單字代表「?.*?」?之語意，試著填空挑戰。?/g,
+    /[（\(]配合上下文填入最適合的單字。?[）\)]/g,
+    /配合上下文填入最適合的單字。?/g,
+    /[（\(]填空挑戰。?[）\)]/g,
+    /填空挑戰。?/g,
+    /[（\(]請依上下文.*?[）\)]/g,
+    /請依上下文.*?/g,
+    /[（\(]讀音為.*?[）\)]/g
+  ];
+
+  removePatterns.forEach(pattern => {
+    cleaned = cleaned.replace(pattern, "");
+  });
+
+  // Clean empty parens that might be left behind
+  cleaned = cleaned.replace(/[（\(]\s*[）\)]/g, "");
+  
+  cleaned = cleaned.trim();
+  
+  if (!cleaned || cleaned === originalTranslation) {
+    if (sentence) {
+      const lowerS = sentence.toLowerCase().trim();
+      if (lowerS.startsWith("don't be") || lowerS.includes(" don't be")) {
+        const meaning = originalTranslation.replace(/的$/, "");
+        return `不要${meaning}`;
+      }
+    }
+    return originalTranslation;
+  }
+
+  return cleaned;
+};
+
+const processMixedSentence = (sentence: string) => {
+  if (!sentence) return { english: "", extractedChinese: "" };
+  
+  // Find index of first Chinese character
+  const chineseMatch = sentence.match(/[\u4e00-\u9fa5]/);
+  if (chineseMatch && typeof chineseMatch.index === 'number') {
+    const englishPart = sentence.substring(0, chineseMatch.index).trim().replace(/[\s\-\,\.\(\)（）]+$/, "");
+    const chinesePart = sentence.substring(chineseMatch.index).trim();
+    
+    // Ensure English sentence has ending punctuation if stripped
+    const cleanEnglish = englishPart + (/[a-zA-Z0-9]$/.test(englishPart) ? "." : "");
+    return {
+      english: cleanEnglish,
+      extractedChinese: chinesePart
+    };
+  }
+  
+  return { english: sentence, extractedChinese: "" };
+};
+
 export function LibraryPanel() {
   const [vocab, setVocab] = useState<VocabEntry[]>([]);
   const [loading, setLoading] = useState(true);
@@ -321,7 +406,7 @@ export function LibraryPanel() {
 
             return (
               <Card 
-                key={item.id} 
+                key={`lib-vocab-${item.id}-${index}`} 
                 id={`vocab-${item.id}`}
                 className={`overflow-hidden transition-all shadow-sm ${
                   isBeingToured 
@@ -392,19 +477,39 @@ export function LibraryPanel() {
                       {isChallengeExpanded ? <ChevronUp className="h-3.5 w-3.5 text-slate-400" /> : <ChevronDown className="h-3.5 w-3.5 text-slate-400" />}
                     </button>
                     
-                    {isChallengeExpanded && (
+                    {isChallengeExpanded && (() => {
+                      const { english: cleanSentence, extractedChinese } = processMixedSentence(item.quizChallenge.sentence);
+                      
+                      let baseTranslation = item.quizChallenge.translation || "";
+                      if (extractedChinese) {
+                        const cleanExtracted = getCleanTranslation(extractedChinese, "", cleanSentence);
+                        const cleanTrans = getCleanTranslation(baseTranslation, "", cleanSentence);
+                        const isMeaningless = !cleanTrans || cleanTrans === item.translation;
+                        if (cleanExtracted && isMeaningless) {
+                          baseTranslation = cleanExtracted;
+                        }
+                      }
+                      const displayedTrans = getCleanTranslation(baseTranslation, item.translation, cleanSentence);
+                      
+                      return (
                       <div className="px-4 pb-4 pt-1.5 text-xs space-y-2 border-t border-slate-100/50 bg-slate-50/80">
                         <div>
                           <p className="font-extrabold text-slate-400 text-[10px] mb-0.5 uppercase tracking-wide">互動英文化境 (Sentence Challenge)：</p>
                           <p className="font-medium text-slate-800 leading-relaxed bg-white border border-slate-200/60 p-2.5 rounded-lg font-mono">
-                            {item.quizChallenge.sentence}
+                            {cleanSentence}
                           </p>
                         </div>
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                          <div>
+                            <p className="font-extrabold text-slate-400 text-[10px] mb-0.5 uppercase tracking-wide">情境背景 (Scenario Context)：</p>
+                            <p className="text-slate-700 bg-white border border-slate-200/60 p-2.5 rounded-lg">
+                              {getCleanContextChinese(item.quizChallenge.contextChinese) || "在日常情境中"}
+                            </p>
+                          </div>
                           <div>
                             <p className="font-extrabold text-slate-400 text-[10px] mb-0.5 uppercase tracking-wide">中文情境對照 (Translation)：</p>
                             <p className="text-slate-700 bg-white border border-slate-200/60 p-2.5 rounded-lg">
-                              {item.quizChallenge.contextChinese}
+                              {displayedTrans}
                             </p>
                           </div>
                           <div>
@@ -423,7 +528,8 @@ export function LibraryPanel() {
                           </div>
                         )}
                       </div>
-                    )}
+                    );
+                    })()}
                   </div>
                 )}
               </Card>

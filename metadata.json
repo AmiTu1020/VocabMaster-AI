@@ -8,6 +8,7 @@
   "majorCapabilities": [
     "AI Vision OCR",
     "Cloud Synchronization",
-    "Voice-to-Text Quiz"
+    "Voice-to-Text Quiz",
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
   ]
 }

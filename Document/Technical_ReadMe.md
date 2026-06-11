@@ -41,7 +41,11 @@
 ### 5. 數據處理優化
 - **圖片壓縮**: 使用 Canvas API 在上傳前將圖片等比例縮放至最長邊 1200px (JPEG/Quality 0.8)，減少頻寬消耗並提升 Gemini 處理速度。
 
-### 6. 最新技術架構增強 (2026/06/08)
+### 6. 最新技術架構增強 (2026/06/08 與近期更新)
+- **AI 內容過濾與情境翻譯動態覆寫機制 (Boilerplate Stripper & Meaningless Translation Fallback)**:
+  - 建立正則表達式過濾器 (Boilerplate Stripper)，自動移除 AI 產出中常見的無效機器人贅字與標記 (如「請根據上下文寫出對應作答」、「提示：...」)。
+  - **中英句型解析分離 (Mixed Sentence Extraction)**：自動偵測並剝離錯置於英文例句後方的整句中文翻譯。
+  - **無效翻譯動態覆蓋機制**：當 AI 生成的 `translation` 被過濾器洗空，或者 AI 直接將單字的「字典解釋」塞入情境翻譯時，系統會動態觸發失效條件 (`isMeaningless = !cleanTrans || cleanTrans === currentWord.translation`)，並自動拿前面剝離下來的完美「整句情境大意」來覆蓋原先的無效內容，徹底解決測驗區與單字庫面臨的翻譯被洗掉遺失的殘留邊界問題。
 - **Firestore 防禦性深度清理機制**: 
   - 由於 Firestore 全面禁止在更新 Map 時夾帶 Javascript 的 `undefined` 値（即使身處巢狀物件中亦然），我們在 `QuizPanel` 的 `handleSaveChallengeToCloud` 本地手動落實了顯式屬性 Fallback 設計，並在 `ImportPanel` 與批次存儲端導入了基於 `JSON.parse(JSON.stringify())` 的深拷貝序列化技術，確保任何不為人知的選填型別空值不會阻礙資料庫存儲。
 - **批次圖片單字優先度決策 (Precedence Filter)**: 

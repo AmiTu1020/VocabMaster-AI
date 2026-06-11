@@ -4,7 +4,7 @@ import { Toaster } from "@/components/ui/sonner";
 import { ImportPanel } from "./components/ImportPanel";
 import { LibraryPanel } from "./components/LibraryPanel";
 import { QuizPanel } from "./components/QuizPanel";
-import { BookOpen, BookText, BrainCircuit, Loader2, LogIn } from "lucide-react";
+import { BookOpen, BookText, BrainCircuit, Loader2, LogIn, AlertTriangle, Key } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { auth } from "./lib/firebase";
 import { onAuthStateChanged, signInWithPopup, GoogleAuthProvider, User } from "firebase/auth";
@@ -14,6 +14,36 @@ export default function App() {
   const [activeTab, setActiveTab] = useState("import");
   const [user, setUser] = useState<User | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
+  const [apiKeyStatus, setApiKeyStatus] = useState<{
+    showWarning: boolean;
+    reason: 'missing' | 'placeholder' | 'gcp_restricted' | 'invalid_format' | 'none';
+    details?: string;
+  }>({ showWarning: false, reason: 'none' });
+
+  useEffect(() => {
+    fetch("/api/gemini/debug-key")
+      .then(res => res.json())
+      .then(data => {
+        if (!data.isKeyPresent || data.status === 'missing') {
+          setApiKeyStatus({ showWarning: true, reason: 'missing' });
+        } else if (data.status === 'placeholder') {
+          setApiKeyStatus({ showWarning: true, reason: 'placeholder' });
+        } else if (data.status === 'gcp_restricted' || data.isGcpKey) {
+          setApiKeyStatus({ 
+            showWarning: true, 
+            reason: 'gcp_restricted',
+            details: `金鑰開頭為「${data.prefix || '無'}」，此為 Google Cloud 專案限制型或 Vertex AI 規格金鑰`
+          });
+        } else if (data.status === 'invalid_format' || !data.isValidPrefix) {
+          setApiKeyStatus({ 
+            showWarning: true, 
+            reason: 'invalid_format',
+            details: `金鑰長度：${data.length} 字元，開頭為「${data.prefix || '無'}」`
+          });
+        }
+      })
+      .catch(err => console.error("Failed to check Gemini key status:", err));
+  }, []);
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (user) => {
@@ -93,7 +123,34 @@ export default function App() {
              </Button>
           </div>
         ) : (
-          <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+          <div className="space-y-6">
+            {apiKeyStatus.showWarning && (
+              <div id="gemini-key-warning" className="flex flex-col sm:flex-row items-start sm:items-center gap-3.5 p-4 rounded-2xl bg-amber-50 border border-amber-100 text-amber-800 shadow-sm transition-all animate-in fade-in slide-in-from-top-2 duration-300">
+                <div className="p-2 bg-amber-500 text-white rounded-xl shadow-sm flex items-center justify-center shrink-0">
+                  <AlertTriangle className="h-5 w-5" />
+                </div>
+                <div className="flex-1 space-y-1">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="font-bold text-sm tracking-tight flex items-center gap-1">
+                      <Key className="h-3.5 w-3.5 inline text-amber-600 animate-pulse" />
+                      Gemini API 金鑰設定提示
+                    </span>
+                    <span className="px-1.5 py-0.5 text-[10px] font-mono font-bold bg-amber-150 uppercase tracking-wider rounded border border-amber-200">
+                      {apiKeyStatus.reason === 'missing' ? '未置入金鑰' : apiKeyStatus.reason === 'placeholder' ? '預設占位符' : apiKeyStatus.reason === 'gcp_restricted' ? 'GCP/Vertex限制金鑰' : '無效金鑰格式'}
+                    </span>
+                  </div>
+                  <p className="text-xs text-amber-700/90 leading-relaxed font-normal">
+                    {apiKeyStatus.reason === 'missing' && "伺服器端尚未偵測到您的 GEMINI_API_KEY 金鑰。"}
+                    {apiKeyStatus.reason === 'placeholder' && "目前偵測到的 GEMINI_API_KEY 為預設樣板字串，非有效金鑰。"}
+                    {apiKeyStatus.reason === 'gcp_restricted' && `系統偵測到其開頭為 AQ.（此為 Google Cloud Vertex AI 或專案限制型金鑰，無法直接用於標準 Gemini API SDK 中，通常會導致 ApiError 400 API key not valid 錯誤）。`}
+                    {apiKeyStatus.reason === 'invalid_format' && `偵測到無效的 API Key。目前金鑰偵測細節：${apiKeyStatus.details || ""}`}
+                    {"請至右上角點擊齒輪圖示 "}<strong>Settings⚙️ &gt; Secrets</strong>{" 填入以「AIzaSy」開頭之標準 Google AI Studio 專用金鑰，即可完美啟動情境題目生成！"}
+                  </p>
+                </div>
+              </div>
+            )}
+
+            <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
             <TabsList className="grid w-full grid-cols-3 mb-8 h-12 p-1 bg-slate-100 rounded-xl overflow-hidden shadow-sm">
               <TabsTrigger 
                 value="import" 
@@ -148,6 +205,7 @@ export default function App() {
               </div>
             </div>
           </Tabs>
+          </div>
         )}
       </main>
 

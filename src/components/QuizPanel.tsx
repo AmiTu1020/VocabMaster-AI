@@ -30,8 +30,105 @@ import { VocabEntry } from "@/types";
 import { motion, AnimatePresence } from "motion/react";
 import { generateQuizChallenge, explainMisconception, QuizChallenge } from "../services/geminiService";
 
+// Helper to sanitize and extract actual target English words for spelling inputs
+const getCleanTargetWords = (missingWord: string): string[] => {
+  if (!missingWord) return [];
+  return missingWord.trim().split(/\s+/).filter(word => {
+    // Filter out pure punctuation, symbols, placeholders like "...", "/", "()", "[]"
+    const clean = word.replace(/[^a-z0-9]/gi, "");
+    return clean.length > 0;
+  });
+};
+
+// Helpers to clean up verbose/repetitive instruction text from display
+const getCleanContextChinese = (ctx: string | undefined): string => {
+  if (!ctx) return "";
+  let cleaned = ctx.trim();
+  
+  // Remove boilerplate instructions from AI fallbacks or generic prompts
+  cleaned = cleaned.replace(/挑戰練習：?根據語意情境拼寫出正確的英文單字：?/g, "");
+  cleaned = cleaned.replace(/挑戰練習：?根據語意情境拼寫出正確的英文單字/g, "");
+  cleaned = cleaned.replace(/挑戰練習：?/g, "");
+  cleaned = cleaned.replace(/根據語意情境拼寫出正確的英文單字：?/g, "");
+  cleaned = cleaned.replace(/針對特定決定提出看法時，試著誠實、具建設性地回應：?/g, "");
+  cleaned = cleaned.replace(/當長官對你的決定提出質疑時，試著誠實、具建設性地回應：?/g, "");
+  cleaned = cleaned.replace(/句中空格之單字代表.*?填空挑戰.*?/g, "");
+  
+  cleaned = cleaned.trim();
+  if (/^[：:\s]*$/.test(cleaned) || cleaned === "挑戰與情境提示：" || cleaned === "挑戰與情境提示") {
+    return "";
+  }
+  return cleaned;
+};
+
+const getCleanTranslation = (trans: string | undefined, originalTranslation: string, sentence?: string): string => {
+  if (!trans) return originalTranslation;
+  let cleaned = trans.trim();
+  
+  // Strip various boilerplate text that the AI or fallback might have included
+  const removePatterns = [
+    /請根據上下文寫出對應作答[（\(]提示：單字中文為「.*?」[）\)]/g,
+    /請根據上下文寫出對應作答/g,
+    /[（\(]提示：單字中文為「.*?」[）\)]/g,
+    /提示：單字中文為「.*?」/g,
+    /提示：/g,
+    /[（\(]句中空格之單字代表「?.*?」?之語意，試著填空挑戰。?[）\)]/g,
+    /句中空格之單字代表「?.*?」?之語意，試著填空挑戰。?/g,
+    /[（\(]配合上下文填入最適合的單字。?[）\)]/g,
+    /配合上下文填入最適合的單字。?/g,
+    /[（\(]填空挑戰。?[）\)]/g,
+    /填空挑戰。?/g,
+    /[（\(]請依上下文.*?[）\)]/g,
+    /請依上下文.*?/g,
+    /[（\(]讀音為.*?[）\)]/g
+  ];
+
+  removePatterns.forEach(pattern => {
+    cleaned = cleaned.replace(pattern, "");
+  });
+
+  // Clean empty parens that might be left behind
+  cleaned = cleaned.replace(/[（\(]\s*[）\)]/g, "");
+  
+  cleaned = cleaned.trim();
+  
+  if (!cleaned || cleaned === originalTranslation) {
+    if (sentence) {
+      const lowerS = sentence.toLowerCase().trim();
+      if (lowerS.startsWith("don't be") || lowerS.includes(" don't be")) {
+        const meaning = originalTranslation.replace(/的$/, "");
+        return `不要${meaning}`;
+      }
+    }
+    return originalTranslation;
+  }
+
+  return cleaned;
+};
+
+// Helper to extract clean english sentence and trailing Chinese translation if mixed in the sentence
+const processMixedSentence = (sentence: string) => {
+  if (!sentence) return { english: "", extractedChinese: "" };
+  
+  // Find index of first Chinese character
+  const chineseMatch = sentence.match(/[\u4e00-\u9fa5]/);
+  if (chineseMatch && typeof chineseMatch.index === 'number') {
+    const englishPart = sentence.substring(0, chineseMatch.index).trim().replace(/[\s\-\,\.\(\)（）]+$/, "");
+    const chinesePart = sentence.substring(chineseMatch.index).trim();
+    
+    // Ensure English sentence has ending punctuation if stripped
+    const cleanEnglish = englishPart + (/[a-zA-Z0-9]$/.test(englishPart) ? "." : "");
+    return {
+      english: cleanEnglish,
+      extractedChinese: chinesePart
+    };
+  }
+  
+  return { english: sentence, extractedChinese: "" };
+};
+
 // Helper to detect if a challenge has a robotic fallback style rather than natural translations
-const isFallbackChallenge = (challenge: any) => {
+const isFallbackChallenge = (challenge: any, word: string, wordTranslation?: string) => {
   if (!challenge) return true;
   const sentence = challenge.sentence || "";
   const t = challenge.translation || "";
@@ -40,14 +137,78 @@ const isFallbackChallenge = (challenge: any) => {
   
   if (!sentence || !t || !missing) return true;
   
+  const lowerWord = word ? word.trim().toLowerCase() : "";
+  const hasSpoilerWord = lowerWord && (
+    t.toLowerCase().includes(lowerWord) || 
+    c.toLowerCase().includes(lowerWord)
+  );
+
+  // Broad check: if the translation contains explicit indicators of dictionary definitions (e.g. part of speech tags)
+  const lowerT = t.toLowerCase();
+  const dictTags = [
+    "adj.", "adv.", "prep.", "conj.", "pron.", "noun.", "verb.", "num.", "art.", 
+    "adj ", "adv ", "prep ", "conj ", "pron ", "noun ", "verb ", "num ", "art ",
+    "形容詞", "名詞", "動詞", "副詞", "介系詞", "連接詞", "代名詞", "冠詞",
+    "形.", "副.", "名.", "動.", "介.", "連.", "代.", "【n.】", "【v.】", "【adj.】", "【adv.】"
+  ];
+  const containsDictTag = dictTags.some(tag => lowerT.includes(tag)) || 
+    /\b(adj|adv|prep|conj|pron|noun|verb|int|num|art)\./i.test(t) ||
+    /^[a-z]+\.?\s/i.test(t.trim()); // Starts with english POS abbreviation
+
+  if (containsDictTag) {
+    return true;
+  }
+
+  // Strip all non-Chinese characters and punctuation to check if it's identical or a substring of the dictionary definition
+  const getPureChinese = (str: string): string => {
+    if (!str) return "";
+    // Remove all English letters, numbers, spaces, and punctuation/symbols
+    return str
+      .replace(/[a-zA-Z0-9]/g, "")
+      .replace(/[\s\.\,\;\:\?\!\-\/\_\\\|~～\+=\*#\$%\^\&\(\)（）\[\]【】\{\}，、；。：？！“”‘’「」]/g, "")
+      .trim();
+  };
+
+  const pureWord = getPureChinese(wordTranslation || "");
+  const pureQuiz = getPureChinese(t);
+
+  if (pureWord && pureQuiz) {
+    // If they are exactly the same Chinese meaning, or one is almost completely equal to the other after stripping symbols/alphabets
+    if (pureQuiz === pureWord) {
+      return true;
+    }
+    
+    // If the quiz translation contains the dictionary meaning but is very short (meaning it didn't translate the whole sentence, just the word with maybe minor fillers like "代表", "的意思", "填空")
+    if (pureQuiz.includes(pureWord) && pureQuiz.length <= pureWord.length + 5) {
+      return true;
+    }
+
+    // If the dictionary meaning contains the quiz translation and the quiz translation is short
+    if (pureWord.includes(pureQuiz) && pureWord.length <= pureQuiz.length + 5) {
+      return true;
+    }
+  }
+  
   return (
     t.includes("請依上下文") ||
+    t.includes("配合上下文") ||
+    t.includes("請根據上下文") ||
+    t.includes("對應作答") ||
+    t.includes("提示：") ||
+    t.includes("填空練習") ||
+    t.includes("最適合的單字") ||
     t.includes("請填入") ||
     t.includes("適合的單字") ||
     t.includes("代表") ||
     t.includes("的意思") ||
+    t.includes("的中文是") ||
+    t.includes("填空挑戰") ||
     c.includes("為了練習") ||
     c.includes("請在以下句子填入") ||
+    c.includes("填空練習") ||
+    c.includes("配合上下文") ||
+    c.includes("特定情境中使用此詞彙") ||
+    hasSpoilerWord ||
     sentence.includes("Explain why you did it, and also why it was necessary")
   );
 };
@@ -61,6 +222,11 @@ export function QuizPanel() {
 
   // Challenge States
   const [currentChallenge, setCurrentChallenge] = useState<QuizChallenge | null>(null);
+  
+  // Extract clean english sentence and trailing Chinese translation if mixed in the sentence
+  const { english: cleanSentence, extractedChinese } = currentChallenge 
+    ? processMixedSentence(currentChallenge.sentence) 
+    : { english: "", extractedChinese: "" };
   const [challengeLoading, setChallengeLoading] = useState(false);
   const [challengeCache, setChallengeCache] = useState<Record<string, QuizChallenge>>({});
   const [challengeFromApiCache, setChallengeFromApiCache] = useState<Record<string, boolean>>({});
@@ -77,7 +243,7 @@ export function QuizPanel() {
       setWordInputs([]);
       return;
     }
-    const targetWords = currentChallenge.missingWord.trim().split(/\s+/);
+    const targetWords = getCleanTargetWords(currentChallenge.missingWord);
     if (!userInput) {
       setWordInputs(Array(targetWords.length).fill(""));
     } else {
@@ -91,7 +257,7 @@ export function QuizPanel() {
   }, [userInput, currentChallenge?.missingWord]);
 
   const handleWordInputChange = (index: number, val: string) => {
-    const targetWords = currentChallenge?.missingWord.trim().split(/\s+/) || [];
+    const targetWords = getCleanTargetWords(currentChallenge?.missingWord || "");
     const newInputs = [...wordInputs];
     while (newInputs.length < targetWords.length) {
       newInputs.push("");
@@ -212,7 +378,7 @@ export function QuizPanel() {
     setSpellingDiagnosis(null);
 
     // Check Cache first to avoid rate limits
-    if (challengeCache[vocab.word] && !isFallbackChallenge(challengeCache[vocab.word])) {
+    if (challengeCache[vocab.word] && !isFallbackChallenge(challengeCache[vocab.word], vocab.word, vocab.translation)) {
       setCurrentChallenge(challengeCache[vocab.word]);
       setChallengeFromApi(!!challengeFromApiCache[vocab.word]);
       setChallengeLoading(false);
@@ -221,7 +387,7 @@ export function QuizPanel() {
     }
 
     // Check if vocabulary record already contains the generated quiz challenge (優先查雲端資料庫)
-    if (vocab.quizChallenge && !isFallbackChallenge(vocab.quizChallenge)) {
+    if (vocab.quizChallenge && !isFallbackChallenge(vocab.quizChallenge, vocab.word, vocab.translation)) {
       setChallengeCache(prev => ({ ...prev, [vocab.word]: vocab.quizChallenge! }));
       setChallengeFromApiCache(prev => ({ ...prev, [vocab.word]: false }));
       setCurrentChallenge(vocab.quizChallenge);
@@ -254,10 +420,24 @@ export function QuizPanel() {
     
     setIsSavingChallenge(true);
     try {
+      const { english: cleanSrcSentence, extractedChinese } = processMixedSentence(currentChallenge.sentence);
+      let finalSaveTrans = currentChallenge.translation || "";
+      
+      // If the extracted Chinese from the sentence is robust and the current translation
+      // seems totally unhelpful/empty/only boilerplate/same as definition, fallback to extracted Chinese
+      if (extractedChinese) {
+        const cleanExtracted = getCleanTranslation(extractedChinese, "", cleanSrcSentence);
+        const cleanTrans = getCleanTranslation(finalSaveTrans, "", cleanSrcSentence);
+        const isMeaningless = !cleanTrans || cleanTrans === currentWord.translation;
+        if (cleanExtracted && isMeaningless) {
+          finalSaveTrans = cleanExtracted;
+        }
+      }
+
       // 確保沒有任何屬性是 undefined（Firestore 不允許帶有 undefined 的屬性，即使是巢狀物件亦然，這會導致寫入失敗）
       const cleanChallenge: any = {
-        sentence: currentChallenge.sentence || "",
-        translation: currentChallenge.translation || "",
+        sentence: cleanSrcSentence || "",
+        translation: finalSaveTrans || "",
         contextChinese: currentChallenge.contextChinese || "",
         missingWord: currentChallenge.missingWord || "",
         source: currentChallenge.source || ""
@@ -316,7 +496,7 @@ export function QuizPanel() {
     const nextIndex = currentIndex + 1;
     if (nextIndex < sessionList.length) {
       const nextWord = sessionList[nextIndex];
-      if (nextWord.quizChallenge && !isFallbackChallenge(nextWord.quizChallenge) && !challengeCache[nextWord.word]) {
+      if (nextWord.quizChallenge && !isFallbackChallenge(nextWord.quizChallenge, nextWord.word, nextWord.translation) && !challengeCache[nextWord.word]) {
         setChallengeCache(prev => ({ ...prev, [nextWord.word]: nextWord.quizChallenge! }));
         setChallengeFromApiCache(prev => ({ ...prev, [nextWord.word]: false }));
         return;
@@ -363,11 +543,68 @@ export function QuizPanel() {
       };
     }
     
-    // Fallback: put gap at start
+    // Multi-word phrase sequential search fallback (e.g. "have ... in common" inside "We have a lot in common.")
+    // Split targetWord into clean words
+    const cleanWordForMatching = (str: string) => {
+      return str.replace(/[^a-z0-9]/gi, "").toLowerCase();
+    };
+    
+    const targetParts = targetWord.split(/[\s\.]+/).map(cleanWordForMatching).filter(p => p.length > 0);
+    
+    if (targetParts.length > 1) {
+      const firstTargetWord = targetParts[0];
+      const lastTargetWord = targetParts[targetParts.length - 1];
+      
+      const firstRegex = new RegExp(`\\b${firstTargetWord}\\b`, 'i');
+      const firstMatch = sentence.match(firstRegex);
+      
+      if (firstMatch && typeof firstMatch.index === 'number') {
+        const firstCharIndex = firstMatch.index;
+        
+        // Find last target word in sentence after first index
+        const remainingSentence = sentence.slice(firstCharIndex + firstMatch[0].length);
+        const lastRegex = new RegExp(`\\b${lastTargetWord}\\b`, 'i');
+        const lastMatch = remainingSentence.match(lastRegex);
+        
+        if (lastMatch && typeof lastMatch.index === 'number') {
+          const lastCharIndex = firstCharIndex + firstMatch[0].length + lastMatch.index + lastMatch[0].length;
+          
+          return {
+            before: sentence.slice(0, firstCharIndex),
+            match: sentence.slice(firstCharIndex, lastCharIndex),
+            after: sentence.slice(lastCharIndex),
+            found: true
+          };
+        }
+      }
+    }
+    
+    // Ultimate Fallback: find a reasonable place to put the gap, NOT at the start!
+    // Often, the targetWord is a single word like "underworld", but maybe word mismatched due to spell/singular.
+    // If we can't find any match, we place the gap at the end of the sentence before the punctuation.
+    let beforeText = sentence;
+    let afterText = "";
+    
+    const endPunctuationMatch = sentence.match(/[\.\?\!]+$/);
+    if (endPunctuationMatch && typeof endPunctuationMatch.index === 'number') {
+      const pIdx = endPunctuationMatch.index;
+      const lastWordMatch = sentence.slice(0, pIdx).match(/\b\w+\b$/);
+      if (lastWordMatch && typeof lastWordMatch.index === 'number') {
+        beforeText = sentence.slice(0, lastWordMatch.index);
+        afterText = lastWordMatch[0] + sentence.slice(pIdx);
+      }
+    } else {
+      const lastWordMatch = sentence.match(/\b\w+\b$/);
+      if (lastWordMatch && typeof lastWordMatch.index === 'number') {
+        beforeText = sentence.slice(0, lastWordMatch.index);
+        afterText = lastWordMatch[0];
+      }
+    }
+    
     return {
-      before: "",
+      before: beforeText,
       match: targetWord,
-      after: " " + sentence.replace(targetWord, "").trim(),
+      after: afterText ? " " + afterText : "",
       found: false
     };
   };
@@ -376,12 +613,20 @@ export function QuizPanel() {
   const handleCheckAnswer = async () => {
     if (!currentChallenge || challengeLoading) return;
     
-    const cleanInput = userInput.trim().toLowerCase();
-    const cleanCorrect = currentChallenge.missingWord.trim().toLowerCase();
+    // Normalize and clean arrays for foolproof comparison to ignore symbols/spacings
+    const cleanInputWords = getCleanTargetWords(userInput);
+    const cleanCorrectWords = getCleanTargetWords(currentChallenge.missingWord);
+    
+    const isMatched = cleanInputWords.length === cleanCorrectWords.length &&
+      cleanInputWords.every((word, idx) => {
+        const valClean = word.toLowerCase().replace(/[^a-z0-9]/gi, "");
+        const correctClean = cleanCorrectWords[idx].toLowerCase().replace(/[^a-z0-9]/gi, "");
+        return valClean === correctClean;
+      });
     
     setTotalAttempts(prev => prev + 1);
 
-    if (cleanInput === cleanCorrect) {
+    if (isMatched) {
       setIsCorrect(true);
       if (!hasRevealedAnswer) {
         setCorrectCount(prev => prev + 1);
@@ -391,7 +636,7 @@ export function QuizPanel() {
       toast.success("太神了！完全正確 💎");
       
       // Auto-pronounce sentence on success to aid auditory pathways
-      speak(currentChallenge.sentence);
+      speak(cleanSentence);
     } else {
       const newAttempts = attempts + 1;
       setAttempts(newAttempts);
@@ -404,7 +649,7 @@ export function QuizPanel() {
       });
 
       // Automatically replace the user's input with the corrected spelling (keeping correct letters, wrong letters replaced with '_')
-      const targetWords = currentChallenge.missingWord.trim().split(/\s+/);
+      const targetWords = getCleanTargetWords(currentChallenge.missingWord);
       const updatedInputs = wordInputs.map((input, wordIdx) => {
         const correctWord = targetWords[wordIdx] || "";
         if (!input) return "_".repeat(correctWord.length); // If empty, make all underscores
@@ -436,7 +681,7 @@ export function QuizPanel() {
           userInput,
           currentChallenge.missingWord,
           sessionList[currentIndex].translation,
-          currentChallenge.sentence
+          cleanSentence
         );
         
         setPinkBubble({
@@ -482,7 +727,7 @@ export function QuizPanel() {
         setTotalAttempts(prev => prev + 1);
       }
       toast.info("已為您揭示正確答案！觀察拼法理解看看吧 💡");
-      speak(currentChallenge.sentence);
+      speak(cleanSentence);
     }
   };
 
@@ -654,7 +899,7 @@ export function QuizPanel() {
               <h4 className="text-sm font-bold text-slate-700 px-1">本輪複習單字：</h4>
               <div className="max-h-52 overflow-y-auto space-y-2 pr-1 scrollbar-thin">
                 {sessionList.map((item, i) => (
-                  <div key={item.id} className="flex items-center justify-between text-xs bg-white p-3 rounded-xl border border-slate-100 hover:border-blue-100 transitional">
+                  <div key={`quiz-review-${item.id}-${i}`} className="flex items-center justify-between text-xs bg-white p-3 rounded-xl border border-slate-100 hover:border-blue-100 transitional">
                     <div className="flex flex-col">
                       <span className="font-extrabold text-slate-800">{item.word}</span>
                       <span className="text-[10px] text-slate-400 italic">{item.phonetic}</span>
@@ -679,7 +924,8 @@ export function QuizPanel() {
   }
 
   const currentWord = sessionList[currentIndex];
-  const parsedSentence = currentChallenge ? splitSentenceAtWord(currentChallenge.sentence, currentChallenge.missingWord) : null;
+
+  const parsedSentence = currentChallenge ? splitSentenceAtWord(cleanSentence, currentChallenge.missingWord) : null;
 
   return (
     <div id="quiz-full-container" className="max-w-md mx-auto space-y-6">
@@ -763,7 +1009,7 @@ export function QuizPanel() {
               </motion.div>
             ) : currentChallenge ? (
               <motion.div
-                key={currentWord.id}
+                key={`quiz-challenge-${currentWord.id}`}
                 initial={{ opacity: 0, scale: 0.95 }}
                 animate={{ opacity: 1, scale: 1 }}
                 exit={{ opacity: 0, scale: 0.95 }}
@@ -785,19 +1031,39 @@ export function QuizPanel() {
                 <div className="space-y-4">
                   {/* Scenario Chinese block */}
                   <div className="space-y-1">
-                    {currentChallenge.contextChinese && (
-                      <p className="text-slate-500 text-xs font-semibold text-center leading-relaxed">
-                        {currentChallenge.contextChinese}
-                      </p>
-                    )}
-                    <p className="text-slate-800 font-extrabold text-base md:text-lg text-center leading-relaxed">
-                      {currentChallenge.translation}
-                    </p>
+                    {(() => {
+                      const displayedCtx = getCleanContextChinese(currentChallenge.contextChinese);
+                      
+                      let baseTranslation = currentChallenge.translation || "";
+                      
+                      if (extractedChinese) {
+                        const cleanExtracted = getCleanTranslation(extractedChinese, "", cleanSentence);
+                        const cleanTrans = getCleanTranslation(baseTranslation, "", cleanSentence);
+                        const isMeaningless = !cleanTrans || cleanTrans === currentWord.translation;
+                        if (cleanExtracted && isMeaningless) {
+                          baseTranslation = cleanExtracted;
+                        }
+                      }
+                      
+                      const displayedTrans = getCleanTranslation(baseTranslation, currentWord.translation, cleanSentence);
+                      return (
+                        <>
+                          {displayedCtx && (
+                            <p className="text-slate-500 text-xs font-semibold text-center leading-relaxed">
+                              {displayedCtx}
+                            </p>
+                          )}
+                          <p className="text-slate-800 font-extrabold text-base md:text-lg text-center leading-relaxed">
+                            {displayedTrans}
+                          </p>
+                        </>
+                      );
+                    })()}
                   </div>
 
                   {/* Dynamic Cloze text input sentence container */}
                   {parsedSentence && (() => {
-                    const targetWords = currentChallenge.missingWord.trim().split(/\s+/);
+                    const targetWords = getCleanTargetWords(currentChallenge.missingWord);
                     return (
                       <div className="py-4 px-3 bg-slate-50/50 rounded-2xl border border-slate-100 text-center leading-loose">
                         <p className="text-lg font-bold text-slate-800 font-sans tracking-wide">
@@ -878,7 +1144,7 @@ export function QuizPanel() {
                             <Button
                               variant="ghost"
                               size="icon"
-                              onClick={() => speak(currentChallenge.sentence)}
+                              onClick={() => speak(cleanSentence)}
                               className="w-7 h-7 inline-flex items-center justify-center rounded-full bg-slate-200/50 hover:bg-slate-200 text-slate-500 ml-2 shadow-sm animate-bounce"
                             >
                               <Volume2 className="h-3.5 w-3.5" />
