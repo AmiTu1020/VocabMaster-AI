@@ -413,6 +413,33 @@ export function QuizPanel() {
     }
   };
 
+  // 4b. Force re-generate a completely new AI challenge (ignoring cache/db values)
+  const forceRegenerateChallenge = async (vocab: VocabEntry) => {
+    setChallengeLoading(true);
+    setUserInput("");
+    setIsCorrect(null);
+    setAttempts(0);
+    setHintsLevel(0);
+    setHasRevealedAnswer(false);
+    setChallengeFromApi(false);
+    setPinkBubble({ show: false, text: "", loading: false });
+    setSpellingDiagnosis(null);
+
+    try {
+      const challenge = await generateQuizChallenge(vocab.word, vocab.translation, vocab.examples);
+      setChallengeCache(prev => ({ ...prev, [vocab.word]: challenge }));
+      setChallengeFromApiCache(prev => ({ ...prev, [vocab.word]: true }));
+      setCurrentChallenge(challenge);
+      setChallengeFromApi(true); // Newly generated from API, show saving options
+      toast.success("已重啟 AI 精準出題！已為您編排全新題目 ✨");
+    } catch (error) {
+      console.error("AI challenge regeneration error:", error);
+      toast.error("AI 出題超時或失敗，請稍候重試");
+    } finally {
+      setChallengeLoading(false);
+    }
+  };
+
   // 可讓使用者自行手動存題目的處理器 (儲存到雲端資料庫)
   const handleSaveChallengeToDb = async () => {
     const currentWord = sessionList[currentIndex];
@@ -1022,9 +1049,20 @@ export function QuizPanel() {
                     <span>{currentWord.isHard ? "難級" : "5級"}</span>
                     <HelpCircle className="h-3 w-3 opacity-60" />
                   </div>
-                  <span className="font-mono bg-slate-50 text-slate-400 px-2 py-0.5 rounded">
-                    {Math.floor(Math.random() * 150) + 1}天前
-                  </span>
+                  
+                  <div className="flex items-center gap-2">
+                    <button 
+                      onClick={() => forceRegenerateChallenge(currentWord)}
+                      className="group flex items-center gap-1 text-[10px] font-black text-indigo-600 hover:text-indigo-800 bg-indigo-50 hover:bg-indigo-100 px-2.5 py-1 rounded-full transition-all border border-indigo-100/30 shadow-xs"
+                      title="AI 語意有問題或有瑕疵？點擊讓 AI 重新出題！"
+                    >
+                      <RefreshCw className="h-2.5 w-2.5 transition-transform duration-500 group-hover:rotate-180 text-indigo-500" />
+                      AI 重新出題
+                    </button>
+                    <span className="font-mono bg-slate-50 text-slate-400 px-2 py-0.5 rounded">
+                      {Math.floor(Math.random() * 150) + 1}天前
+                    </span>
+                  </div>
                 </div>
 
                 {/* Scenario text translation content */}
@@ -1261,7 +1299,12 @@ export function QuizPanel() {
                 ) : (
                   <Save className="h-4.5 w-4.5 text-indigo-500" />
                 )}
-                <span>此題不錯，儲存至雲端資料庫 💾</span>
+                <span>
+                  {currentWord.quizChallenge 
+                    ? "此新題更佳，覆蓋更新雲端資料庫 💾" 
+                    : "此題不錯，儲存至雲端資料庫 💾"
+                  }
+                </span>
               </Button>
             </div>
           )}
