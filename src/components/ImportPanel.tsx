@@ -433,6 +433,7 @@ export function ImportPanel() {
 
     setIsSaving(item.id);
     try {
+      const wordClean = item.word.trim();
       // Determine if this is the last item before state update
       const isLastItem = extractedItems.length === 1;
 
@@ -440,7 +441,7 @@ export function ImportPanel() {
       const q = query(
         collection(db, "vocab"),
         where("creatorId", "==", auth.currentUser.uid),
-        where("word", "==", item.word)
+        where("word", "==", wordClean)
       );
       const querySnapshot = await getDocs(q);
       
@@ -474,6 +475,7 @@ export function ImportPanel() {
       }
 
       const { id, ...itemToSave } = JSON.parse(JSON.stringify(item));
+      itemToSave.word = wordClean; // 確保新增進資料庫的單字也是乾淨無空白的
       await addDoc(collection(db, "vocab"), {
         ...itemToSave, // 這將一併寫入從截圖提取的 quizChallenge
         isHard: item.isHard || false,
@@ -671,7 +673,7 @@ export function ImportPanel() {
                       id={`save-cloud-btn-${item.id}`}
                       className="w-full mt-4 bg-slate-900 hover:bg-slate-800 text-white gap-2 h-9"
                       onClick={() => saveToCloud(item)}
-                      disabled={isSaving === item.id}
+                      disabled={!!isSaving}
                     >
                       {isSaving === item.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
                       存入雲端

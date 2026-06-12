@@ -7,14 +7,17 @@ const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
 
 async function run() {
-  const q = query(collection(db, 'vocabulary'), limit(5));
+  const q = query(collection(db, 'vocab'));
   const snap = await getDocs(q);
+  const words: any[] = [];
   snap.forEach(doc => {
-    console.log('Word:', doc.data().word);
-    console.log('Translation:', doc.data().translation);
-    console.log('QuizChallenge:', JSON.stringify(doc.data().quizChallenge, null, 2));
-    console.log('---');
+    words.push({id: doc.id, ...doc.data()});
   });
+  
+  const targetWords = ['will', 'post', 'previous', 'repair', 'special', 'textbook'];
+  const matches = words.filter(w => targetWords.some(t => w.word.toLowerCase().includes(t)));
+  console.log(JSON.stringify(matches.map(m => ({ id: m.id, word: m.word, wordLength: m.word.length, creatorId: m.creatorId, hasQuiz: !!m.quizChallenge })), null, 2));
+
   process.exit(0);
 }
 run();

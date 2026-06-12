@@ -331,8 +331,8 @@ export function QuizPanel() {
       );
       const snapshot = await getDocs(q);
       const docs = snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
+        ...doc.data(),
+        id: doc.id
       }) as VocabEntry);
       
       setVocabPool(docs);
