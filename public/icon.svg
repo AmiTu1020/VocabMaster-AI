@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="100%" height="100%">
+  <rect width="512" height="512" rx="140" fill="#18181b" />
+  <!-- Brain-Circuit icon scaled and centered inside 512x512, with white stroke -->
+  <g transform="translate(112, 112) scale(12)" stroke="#ffffff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" fill="none">
+    <path d="M12 5a3 3 0 1 0-5.997.125 4 4 0 0 0-2.526 5.77 4 4 0 0 0 .556 6.588A4 4 0 1 0 12 18Z"/>
+    <path d="M12 5a3 3 0 1 1 5.997.125 4 4 0 0 1 2.526 5.77 4 4 0 0 1-.556 6.588A4 4 0 1 1 12 18Z"/>
+    <path d="M9 13a3 3 0 1 0 3-3"/>
+    <path d="M12 10v4"/>
+    <path d="M12 12H9"/>
+    <path d="M16 13h-3"/>
+    <path d="M12 10h3"/>
+    <path d="M12 14h-3"/>
+    <path d="M14 17h1"/>
+    <path d="M10 17h-1"/>
+    <path d="M12 18v2"/>
+  </g>
+</svg>
