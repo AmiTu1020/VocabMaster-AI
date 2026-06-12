@@ -65,6 +65,14 @@
 - **寫入對齊與 Firebase 快照 ID 強制映射映射 (Strict Document Snapshot ID Decoupling)**:
   - 為避免前端在進行讀寫和實時快照（onSnapshot）訂閱時，由於 object spread 解構順序混亂 (`{...doc.data(), id: doc.id}`) 而丟失 ID 或導致臨時性 ID 丟失、重整。
   - 重新標準化資料映射：在解構 `.data()` 時，確保將 `id: doc.id` 覆蓋在屬性最尾端，或作顯式屬性聲明，從而在資料層保證 UI 全生命週期內每個 VocabEntry 只有唯一權威 ID。
-  - 此舉完美排除了 StrictMode 或 React 18 Concurrent Rendering 掛載和重新訂閱時帶來的短暫狀態不同步。
+  - 此舉完美排除了 StrictMode 或 React 18 Concurrent Rendering 掛載 and 重新訂閱時帶來的短暫狀態不同步。
+
+- **三維常忘單字異步更新架構 (Multi-Entry Async Star Persistence Model - 2026/06/12)**:
+  - **資料同步策略**：實作 `toggleWordHardById(wordId, currentStatus, sessionIndex, wordStr)` 多維同步函數。在使用者於測驗卡、答畢提醒卡、完賽結算複習清單點擊星星標記時，同步進行三層狀態變更：
+    1. **本機測驗序列更新**：變更 `sessionList` 單字對象之 `.isHard` 屬性，確保測驗主卡片與結算卡片立即動態重繪。
+    2. **全局緩存更新**：變更 `vocabPool` 單字清單對象之屬性，確保使用者回到單字本頁面（LibraryPanel）時讀取到最新的常忘狀態。
+    3. **異步雲端持久化**：使用 `setDoc(docRef, { isHard: newHardStatus }, { merge: true })` 向 Firestore 資料庫寫入更新，杜絕空值衝突，兼顧無感本地響應與數據庫高可靠性。
+  - **交互一致性設計**：整合級聯狀態與多星按鈕，讓通關清單上的各個單字星星相互獨立、自由切換，而不影響其他單字或觸發非預期重繪；並在測驗卡左上角引入按鈕觸發本機單字狀態轉換，保證多設備、多場景一致體感。
+
 
 

@@ -238,6 +238,7 @@ export function QuizPanel() {
   const [wordInputs, setWordInputs] = useState<string[]>([]);
 
   // Synchronize dynamic multi-box inputs from single string state (such as resets, voice overrides, or automated hints)
+  // Initialize inputs when a query/challenge changes (does not run on interactive user input typing to prevent collapsing/shifting)
   useEffect(() => {
     if (!currentChallenge || !currentChallenge.missingWord) {
       setWordInputs([]);
@@ -254,7 +255,27 @@ export function QuizPanel() {
       }
       setWordInputs(newInputs);
     }
-  }, [userInput, currentChallenge?.missingWord]);
+  }, [currentChallenge?.missingWord]);
+
+  // Helper to update both userInput and wordInputs simultaneously for macro actions (e.g. voice, hints, resets)
+  const updateUserInputAndWordInputs = (fullText: string) => {
+    setUserInput(fullText);
+    if (!currentChallenge || !currentChallenge.missingWord) {
+      setWordInputs([]);
+      return;
+    }
+    const targetWords = getCleanTargetWords(currentChallenge.missingWord);
+    if (!fullText) {
+      setWordInputs(Array(targetWords.length).fill(""));
+    } else {
+      const parts = fullText.trim().split(/\s+/);
+      const newInputs = Array(targetWords.length).fill("");
+      for (let i = 0; i < targetWords.length; i++) {
+        newInputs[i] = parts[i] || "";
+      }
+      setWordInputs(newInputs);
+    }
+  };
 
   const handleWordInputChange = (index: number, val: string) => {
     const targetWords = getCleanTargetWords(currentChallenge?.missingWord || "");
@@ -269,6 +290,44 @@ export function QuizPanel() {
     setUserInput(joined);
 
     if (isCorrect === false) setIsCorrect(null);
+  };
+
+  const toggleWordHardById = async (wordId: string, currentStatus: boolean, sessionIndex: number, wordStr: string) => {
+    if (!auth.currentUser) {
+      toast.error("請先登入");
+      return;
+    }
+    const newHardStatus = !currentStatus;
+
+    // 1. Update sessionList locally
+    setSessionList(prev => prev.map((item, idx) => 
+      idx === sessionIndex ? { ...item, isHard: newHardStatus } : item
+    ));
+
+    // 2. Update vocabPool locally
+    setVocabPool(prev => prev.map(item => 
+      item.id === wordId ? { ...item, isHard: newHardStatus } : item
+    ));
+
+    // 3. Update Firestore DB using setDoc with merge
+    try {
+      const docRef = doc(db, "vocab", wordId);
+      await setDoc(docRef, { isHard: newHardStatus }, { merge: true });
+      if (newHardStatus) {
+        toast.success(`已將 "${wordStr}" 標記為常忘單字 ⭐️`);
+      } else {
+        toast.info(`已取消 "${wordStr}" 的常忘單字標記`);
+      }
+    } catch (error) {
+      console.error("Error updating word difficulty:", error);
+      toast.error("更新失敗");
+    }
+  };
+
+  const toggleCurrentWordHard = async () => {
+    const currentWord = sessionList[currentIndex];
+    if (!currentWord) return;
+    await toggleWordHardById(currentWord.id, !!currentWord.isHard, currentIndex, currentWord.word);
   };
 
   const [isListening, setIsListening] = useState(false);
@@ -310,7 +369,7 @@ export function QuizPanel() {
       recognitionRef.current.onresult = (event: any) => {
         const text = event.results[0][0].transcript;
         const cleanText = text.replace(/[.,\/#!$%\^&\*;:{}=\-_`~()]/g,"").trim();
-        setUserInput(cleanText);
+        updateUserInputAndWordInputs(cleanText);
         setIsListening(false);
         toast.success(`語音辨識成功："${cleanText}"`);
       };
@@ -368,7 +427,7 @@ export function QuizPanel() {
   // 4. Fetch or generate high-fidelity AI challenge for active vocabulary
   const loadChallengeForWord = async (vocab: VocabEntry) => {
     setChallengeLoading(true);
-    setUserInput("");
+    updateUserInputAndWordInputs("");
     setIsCorrect(null);
     setAttempts(0);
     setHintsLevel(0);
@@ -416,7 +475,7 @@ export function QuizPanel() {
   // 4b. Force re-generate a completely new AI challenge (ignoring cache/db values)
   const forceRegenerateChallenge = async (vocab: VocabEntry) => {
     setChallengeLoading(true);
-    setUserInput("");
+    updateUserInputAndWordInputs("");
     setIsCorrect(null);
     setAttempts(0);
     setHintsLevel(0);
@@ -743,12 +802,12 @@ export function QuizPanel() {
       setHintsLevel(1);
       // Pre-fill input value with first character to assist users
       const firstLetter = currentChallenge.missingWord[0];
-      setUserInput(firstLetter);
+      updateUserInputAndWordInputs(firstLetter);
       toast.info(`為您填入首字「${firstLetter}」囉！`);
     } else {
       setHintsLevel(2);
       setHasRevealedAnswer(true);
-      setUserInput(currentChallenge.missingWord);
+      updateUserInputAndWordInputs(currentChallenge.missingWord);
       setIsCorrect(true);
       if (attempts === 0) {
         setTotalAttempts(prev => prev + 1);
@@ -762,7 +821,7 @@ export function QuizPanel() {
     if (isListening) {
       recognitionRef.current?.stop();
     } else {
-      setUserInput("");
+      updateUserInputAndWordInputs("");
       setIsListening(true);
       recognitionRef.current?.start();
     }
@@ -926,12 +985,23 @@ export function QuizPanel() {
               <h4 className="text-sm font-bold text-slate-700 px-1">本輪複習單字：</h4>
               <div className="max-h-52 overflow-y-auto space-y-2 pr-1 scrollbar-thin">
                 {sessionList.map((item, i) => (
-                  <div key={`quiz-review-${item.id}-${i}`} className="flex items-center justify-between text-xs bg-white p-3 rounded-xl border border-slate-100 hover:border-blue-100 transitional">
-                    <div className="flex flex-col">
-                      <span className="font-extrabold text-slate-800">{item.word}</span>
-                      <span className="text-[10px] text-slate-400 italic">{item.phonetic}</span>
+                  <div key={`quiz-review-${item.id}-${i}`} className="flex items-center justify-between text-xs bg-white p-3 rounded-xl border border-slate-100 hover:border-blue-100 transition-all gap-2">
+                    <div className="flex items-center gap-2">
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => toggleWordHardById(item.id, !!item.isHard, i, item.word)}
+                        className={`h-7 w-7 rounded-lg shrink-0 transition-all active:scale-90 p-0 ${item.isHard ? 'text-amber-500 hover:text-amber-600' : 'text-slate-300 hover:text-slate-400'}`}
+                        title={item.isHard ? "已設為常忘單字" : "設為常忘單字"}
+                      >
+                        <Star className={`h-4 w-4 ${item.isHard ? 'fill-amber-400 text-amber-500' : 'text-slate-300'}`} />
+                      </Button>
+                      <div className="flex flex-col">
+                        <span className="font-extrabold text-slate-800">{item.word}</span>
+                        <span className="text-[10px] text-slate-400 italic">{item.phonetic}</span>
+                      </div>
                     </div>
-                    <span className="text-slate-500 font-medium">{item.translation}</span>
+                    <span className="text-slate-500 font-medium text-right break-words max-w-[150px]">{item.translation}</span>
                   </div>
                 ))}
               </div>
@@ -1045,10 +1115,18 @@ export function QuizPanel() {
               >
                 {/* Level badges and date representation directly matching user upload screenshot */}
                 <div className="flex justify-between items-center text-xs text-slate-400">
-                  <div className="flex items-center gap-1 bg-sky-50 text-sky-700 px-3 py-1 rounded-full font-black border border-sky-100">
+                  <button
+                    onClick={toggleCurrentWordHard}
+                    className={`flex items-center gap-1.5 px-3 py-1 rounded-full font-black border transition-all active:scale-95 shadow-xs ${
+                      currentWord.isHard 
+                        ? "bg-amber-50 hover:bg-amber-100 text-amber-700 border-amber-200" 
+                        : "bg-sky-50 hover:bg-sky-100 text-sky-700 border-sky-100"
+                    }`}
+                    title={currentWord.isHard ? "已設為常忘單字 (點擊取消)" : "設為常忘單字 (點擊加星)"}
+                  >
                     <span>{currentWord.isHard ? "難級" : "5級"}</span>
-                    <HelpCircle className="h-3 w-3 opacity-60" />
-                  </div>
+                    <Star className={`h-3.5 w-3.5 shrink-0 transition-transform ${currentWord.isHard ? 'text-amber-500 fill-amber-400 scale-110' : 'text-slate-400 hover:text-amber-500'}`} />
+                  </button>
                   
                   <div className="flex items-center gap-2">
                     <button 
@@ -1103,12 +1181,12 @@ export function QuizPanel() {
                   {parsedSentence && (() => {
                     const targetWords = getCleanTargetWords(currentChallenge.missingWord);
                     return (
-                      <div className="py-4 px-3 bg-slate-50/50 rounded-2xl border border-slate-100 text-center leading-loose">
-                        <p className="text-lg font-bold text-slate-800 font-sans tracking-wide">
-                          {parsedSentence.before}
+                      <div className="py-4 px-3 bg-slate-50/50 rounded-2xl border border-slate-100 text-center leading-relaxed">
+                        <div className="text-lg font-bold text-slate-800 font-sans tracking-wide flex flex-wrap items-center justify-center gap-x-1.5 gap-y-2.5">
+                          <span className="break-words whitespace-normal text-slate-800">{parsedSentence.before}</span>
                           
                           {/* Multiple inline input fields exactly matching user's individual words */}
-                          <span className="relative inline-flex items-center gap-2 align-middle mx-1">
+                          <span className="relative inline-flex flex-wrap items-center justify-center gap-2 align-middle mx-1 max-w-full">
                             {targetWords.map((word, idx) => {
                               const val = wordInputs[idx] || "";
                               
@@ -1175,7 +1253,7 @@ export function QuizPanel() {
                             })}
                           </span>
                           
-                          {parsedSentence.after}
+                          <span className="break-words whitespace-normal text-slate-800">{parsedSentence.after}</span>
                           
                           {/* Pronounce target volume tool icon - only show after answer is revealed to reinforce memory */}
                           {(isCorrect === true || hasRevealedAnswer) && (
@@ -1183,12 +1261,12 @@ export function QuizPanel() {
                               variant="ghost"
                               size="icon"
                               onClick={() => speak(cleanSentence)}
-                              className="w-7 h-7 inline-flex items-center justify-center rounded-full bg-slate-200/50 hover:bg-slate-200 text-slate-500 ml-2 shadow-sm animate-bounce"
+                              className="w-7 h-7 inline-flex items-center justify-center rounded-full bg-slate-200/50 hover:bg-slate-200 text-slate-500 shadow-sm animate-bounce"
                             >
                               <Volume2 className="h-3.5 w-3.5" />
                             </Button>
                           )}
-                        </p>
+                        </div>
                       </div>
                     );
                   })()}
@@ -1222,6 +1300,49 @@ export function QuizPanel() {
                     </motion.div>
                   )}
                 </AnimatePresence>
+
+                {/* 4. Frequently-forgotten word toggle with Star feedback */}
+                {(isCorrect === true || hasRevealedAnswer === true) && (
+                  <motion.div 
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="flex items-center justify-between p-3 bg-amber-50/70 hover:bg-amber-50 rounded-2xl border border-amber-200/50 shadow-xs mt-3 transition-colors animate-in fade-in slide-in-from-bottom-2 duration-300"
+                  >
+                    <div className="flex items-center gap-2">
+                      <div className="relative flex items-center justify-center">
+                        <Star className={`h-5 w-5 transition-transform duration-300 ${currentWord.isHard ? 'fill-amber-400 text-amber-500 scale-110 animate-pulse' : 'text-slate-300 hover:text-amber-400'}`} />
+                        {currentWord.isHard && (
+                          <span className="absolute -top-1 -right-1 flex h-2 w-2">
+                            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
+                            <span className="relative inline-flex rounded-full h-2 w-2 bg-amber-500"></span>
+                          </span>
+                        )}
+                      </div>
+                      <div className="text-left">
+                        <p className="text-xs font-black text-slate-800">
+                          {currentWord.isHard ? "已歸類為「常忘單字」★" : "記不起來嗎？這題納入常忘吧！"}
+                        </p>
+                        <p className="text-[10px] text-slate-500 font-medium">
+                          {currentWord.isHard ? "此單字將會加強複習與測驗出題 ⭐️" : "標記為常忘單字，未來系統將優先加強"}
+                        </p>
+                      </div>
+                    </div>
+                    
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={toggleCurrentWordHard}
+                      className={`h-8 px-2.5 rounded-xl text-xs font-black transition-all border flex items-center gap-1 active:scale-95 ${
+                        currentWord.isHard
+                          ? "bg-amber-100 hover:bg-amber-200 border-amber-300 text-amber-800"
+                          : "bg-white hover:bg-slate-50 border-slate-200 text-slate-600 hover:text-slate-800"
+                      }`}
+                    >
+                      <Star className={`h-3 w-3 ${currentWord.isHard ? 'fill-amber-500 text-amber-500' : 'text-slate-400'}`} />
+                      {currentWord.isHard ? "已加星" : "加入常忘"}
+                    </Button>
+                  </motion.div>
+                )}
 
                 {/* Reference source at the bottom right corner exactly like [單字來源]What Women Want */}
                 <div className="text-right text-[10px] text-slate-400 italic">
