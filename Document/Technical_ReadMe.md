@@ -55,4 +55,16 @@
 - **音標框顯示濾除與延遲語音播報機制 (Phonetic Elimination & Delayed TTS Activation)**:
   - 針對拼寫測驗情境卡，系統主動「隱藏測驗卡底部的音標提示」，防止不支援國際音標字型的裝置顯示令人困惑的「空白字方框 (Square Box Font Fallback)」。
   - 為了強化使用者的「先拼寫思考、後聆聽加深印象」的學習效果，將**整句朗讀發音按鈕的顯示時機，延遲到答案正式公布 (確認答案正確或被揭曉) 之後才動態出現** (配有精美 bounce 微動畫引導使用者點擊)，達成測驗過程中的「耳腦專注」與答對時的「聽覺記憶強化」。
+- **一體化高效率單一維度篩選狀態機 (Unified Dimension State Filter Ribbon)**:
+  - 捨棄多列過濾面板所引發的多重狀態重疊與計算混淆。
+  - 將「常忘狀態」與「測驗狀態」解耦，轉化為強健的單一狀態機模式 (`activeFilter: 'all' | 'hard' | 'hasQuiz' | 'noQuiz'`)，在 `filter()` 遍歷中實現極速 O(1) 的分支過濾評估。
+  - 降低介面複雜度的同時大幅提高效能，並完美融合動態統計指示器 (`hardCount`, `withQuizCount`, `withoutQuizCount`) 的即時 React State 更新。
+- **無斷層寬度自適應美學折行引擎 (Zero-Truncation Text Wrapping Engine)**:
+  - 為了解決長字串在固定寬度容器（特別是卡片）下因 `truncate` 或 `text-ellipsis` 導致內容損失的 UX 痛點，全面廢除固定長度截斷。
+  - 改採 `items-start` 分層對齊，結合 Tailwind CSS 的 `break-words` 與 `whitespace-normal` 佈局。使所有長單字、複雜詞語、國際音標及中文描述能流暢地按寬度邊界作垂直向下的自適應多行擴充，在根本上避免了文字被裁切的現象。
+- **寫入對齊與 Firebase 快照 ID 強制映射映射 (Strict Document Snapshot ID Decoupling)**:
+  - 為避免前端在進行讀寫和實時快照（onSnapshot）訂閱時，由於 object spread 解構順序混亂 (`{...doc.data(), id: doc.id}`) 而丟失 ID 或導致臨時性 ID 丟失、重整。
+  - 重新標準化資料映射：在解構 `.data()` 時，確保將 `id: doc.id` 覆蓋在屬性最尾端，或作顯式屬性聲明，從而在資料層保證 UI 全生命週期內每個 VocabEntry 只有唯一權威 ID。
+  - 此舉完美排除了 StrictMode 或 React 18 Concurrent Rendering 掛載和重新訂閱時帶來的短暫狀態不同步。
+
 
