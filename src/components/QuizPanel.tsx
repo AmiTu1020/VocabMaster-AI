@@ -356,6 +356,12 @@ export function QuizPanel() {
 
   const recognitionRef = useRef<any>(null);
 
+  // 用於突破 webkitSpeechRecognition 異步事件回調中的 React 閉包陷阱
+  const latestUpdateRef = useRef(updateUserInputAndWordInputs);
+  useEffect(() => {
+    latestUpdateRef.current = updateUserInputAndWordInputs;
+  });
+
   // 1. Initial Load & Setup Speech SDK
   useEffect(() => {
     fetchVocab();
@@ -369,7 +375,7 @@ export function QuizPanel() {
       recognitionRef.current.onresult = (event: any) => {
         const text = event.results[0][0].transcript;
         const cleanText = text.replace(/[.,\/#!$%\^&\*;:{}=\-_`~()]/g,"").trim();
-        updateUserInputAndWordInputs(cleanText);
+        latestUpdateRef.current(cleanText);
         setIsListening(false);
         toast.success(`語音辨識成功："${cleanText}"`);
       };
