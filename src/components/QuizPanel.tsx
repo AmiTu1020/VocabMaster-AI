@@ -1003,7 +1003,21 @@ export function QuizPanel() {
                         <Star className={`h-4 w-4 ${item.isHard ? 'fill-amber-400 text-amber-500' : 'text-slate-300'}`} />
                       </Button>
                       <div className="flex flex-col">
-                        <span className="font-extrabold text-slate-800">{item.word}</span>
+                        <div className="flex items-center gap-1.5">
+                          <span className="font-extrabold text-slate-800">{item.word}</span>
+                          <Button 
+                            variant="ghost" 
+                            size="icon" 
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              speak(item.word);
+                            }} 
+                            className="h-6 w-6 text-slate-400 hover:text-blue-600 hover:bg-slate-50 active:scale-90"
+                            title="播放發音"
+                          >
+                            <Volume2 className="h-3.5 w-3.5" />
+                          </Button>
+                        </div>
                         <span className="text-[10px] text-slate-400 italic">{item.phonetic}</span>
                       </div>
                     </div>

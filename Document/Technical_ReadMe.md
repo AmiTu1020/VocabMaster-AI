@@ -74,5 +74,13 @@
     3. **異步雲端持久化**：使用 `setDoc(docRef, { isHard: newHardStatus }, { merge: true })` 向 Firestore 資料庫寫入更新，杜絕空值衝突，兼顧無感本地響應與數據庫高可靠性。
   - **交互一致性設計**：整合級聯狀態與多星按鈕，讓通關清單上的各個單字星星相互獨立、自由切換，而不影響其他單字或觸發非預期重繪；並在測驗卡左上角引入按鈕觸發本機單字狀態轉換，保證多設備、多場景一致體感。
 
+- **語音異步監聽生命週期閉包修復 (Speech Recognition Closure Trap & Ref Binding - 2026/06/12)**:
+  - **背景**：`webkitSpeechRecognition` 事件回調（onresult）時會捕捉初次掛載時之過期 React State，形成閉包陷阱（Closure Trap）。這使語音辨識成功能，在異步回調呼叫 `updateUserInputAndWordInputs` 處理時，讀取不到最新變更的字元格屬性（`wordInputs`），導致辨識字串無法即時在拼字獨立框中順利顯現。
+  - **實作**：增設 `latestUpdateRef = useRef(updateUserInputAndWordInputs)` 伴隨最新 Render 動態更新。在 `onresult` 觸發時藉由呼叫 `latestUpdateRef.current(...)` 穿透閉包牆，將語音單字 100% 精準投射至各個客製字元格子中。
+
+- **複習清單 TTS 語音朗讀與冒泡防禦 (Speech Synthesis Integration in Quiz Review - 2026/06/12)**:
+  - **實作**：將現有 Web Speech API (`window.speechSynthesis`) 全局發音器引用至大滿貫結算畫面。為本輪複習清單的每個拼寫單字追加獨立的喇叭播放按鈕，其 `onClick` 函數內部呼叫 `e.stopPropagation()` 防止觸發卡片父容器其他非預設行為，提供直觀、立竿見影的高效糾錯學習模式。
+
+
 
 
