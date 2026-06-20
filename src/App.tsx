@@ -64,50 +64,52 @@ export default function App() {
 
   if (authLoading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-slate-50">
+      <div className="min-h-[100dvh] flex items-center justify-center bg-slate-50">
         <Loader2 className="h-8 w-8 animate-spin text-primary" />
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-slate-50 font-sans text-slate-900">
-      <header className="sticky top-0 z-10 border-b bg-white/80 backdrop-blur-md">
-        <div className="container mx-auto flex h-16 items-center justify-between px-4">
-          <div className="flex items-center gap-2">
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary text-primary-foreground shadow-lg">
-              <BrainCircuit className="h-6 w-6" />
-            </div>
-            <h1 className="text-sm font-bold sm:text-xl tracking-tight bg-gradient-to-r from-primary to-blue-600 bg-clip-text text-transparent whitespace-nowrap">
-              English Vocab Master
-            </h1>
-          </div>
-          
-          <nav>
-            {user ? (
-              <div className="flex items-center gap-3">
-                <div className="flex flex-col items-end opacity-0 md:opacity-100 transition-opacity">
-                  <span className="text-xs font-bold text-slate-900">{user.displayName}</span>
-                  <span className="text-[10px] text-slate-500">{user.email}</span>
-                </div>
-                <img 
-                  src={user.photoURL || ""} 
-                  alt="Avatar" 
-                  className="h-8 w-8 rounded-full border-2 border-primary/20 shadow-sm"
-                />
-                <Button variant="ghost" size="sm" onClick={() => auth.signOut()} className="text-xs">登出</Button>
+    <div className="h-[100dvh] bg-slate-50 font-sans text-slate-900 overflow-hidden flex flex-col">
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 w-full flex flex-col min-h-0">
+        <header className="flex-none z-50 border-b bg-white shadow-sm relative">
+          <div className="container mx-auto flex h-[60px] sm:h-16 items-center justify-between px-4">
+            <div className="flex items-center gap-2">
+              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary text-primary-foreground shadow-lg">
+                <BrainCircuit className="h-6 w-6" />
               </div>
-            ) : (
-              <Button onClick={login} size="sm" className="gap-2 rounded-lg">
-                <LogIn className="h-4 w-4" />
-                登入
-              </Button>
-            )}
-          </nav>
-        </div>
-      </header>
+              <h1 className="text-sm font-bold sm:text-xl tracking-tight bg-gradient-to-r from-primary to-blue-600 bg-clip-text text-transparent whitespace-nowrap">
+                English Vocab Master
+              </h1>
+            </div>
+            
+            <nav>
+              {user ? (
+                <div className="flex items-center gap-3">
+                  <div className="flex flex-col items-end opacity-0 md:opacity-100 transition-opacity">
+                    <span className="text-xs font-bold text-slate-900">{user.displayName}</span>
+                    <span className="text-[10px] text-slate-500">{user.email}</span>
+                  </div>
+                  <img 
+                    src={user.photoURL || ""} 
+                    alt="Avatar" 
+                    className="h-8 w-8 rounded-full border-2 border-primary/20 shadow-sm"
+                  />
+                  <Button variant="ghost" size="sm" onClick={() => auth.signOut()} className="text-xs">登出</Button>
+                </div>
+              ) : (
+                <Button onClick={login} size="sm" className="gap-2 rounded-lg">
+                  <LogIn className="h-4 w-4" />
+                  登入
+                </Button>
+              )}
+            </nav>
+          </div>
+        </header>
 
-      <main className="container mx-auto px-4 py-8 max-w-4xl">
+        <main className="flex-1 overflow-y-auto overflow-x-hidden w-full relative">
+          <div className="container mx-auto px-4 py-4 sm:py-8 max-w-4xl h-full">
         {!user ? (
           <div className="flex flex-col items-center justify-center py-20 bg-white rounded-3xl shadow-sm border border-slate-100">
              <div className="w-20 h-20 bg-slate-100 rounded-full flex items-center justify-center mb-6">
@@ -125,7 +127,7 @@ export default function App() {
         ) : (
           <div className="space-y-6">
             {apiKeyStatus.showWarning && (
-              <div id="gemini-key-warning" className="flex flex-col sm:flex-row items-start sm:items-center gap-3.5 p-4 rounded-2xl bg-amber-50 border border-amber-100 text-amber-800 shadow-sm transition-all animate-in fade-in slide-in-from-top-2 duration-300">
+              <div id="gemini-key-warning" className="flex flex-col sm:flex-row items-start sm:items-center gap-3.5 p-4 rounded-2xl bg-amber-50 border border-amber-100 text-amber-800 shadow-sm transition-all animate-in fade-in slide-in-from-top-2 duration-300 mb-6">
                 <div className="p-2 bg-amber-500 text-white rounded-xl shadow-sm flex items-center justify-center shrink-0">
                   <AlertTriangle className="h-5 w-5" />
                 </div>
@@ -150,64 +152,48 @@ export default function App() {
               </div>
             )}
 
-            <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-            <TabsList className="grid w-full grid-cols-3 mb-8 h-12 p-1 bg-slate-100 rounded-xl overflow-hidden shadow-sm">
-              <TabsTrigger 
-                value="import" 
-                className="rounded-lg data-[state=active]:bg-white data-[state=active]:shadow-sm transition-all flex items-center gap-2"
-              >
-                <BookOpen className="h-4 w-4" />
-                <span className="hidden sm:inline">辨識萃取</span>
-              </TabsTrigger>
-              <TabsTrigger 
-                value="library" 
-                className="rounded-lg data-[state=active]:bg-white data-[state=active]:shadow-sm transition-all flex items-center gap-2"
-              >
-                <BookText className="h-4 w-4" />
-                <span className="hidden sm:inline">雲端單字</span>
-              </TabsTrigger>
-              <TabsTrigger 
-                value="quiz" 
-                className="rounded-lg data-[state=active]:bg-white data-[state=active]:shadow-sm transition-all flex items-center gap-2"
-              >
-                <BrainCircuit className="h-4 w-4" />
-                <span className="hidden sm:inline">智能測驗</span>
-              </TabsTrigger>
-            </TabsList>
+            <div className="sticky top-0 z-40 bg-slate-50/95 backdrop-blur-md transform-gpu py-3 -mx-4 px-4 sm:-mx-0 sm:px-0 border-b border-transparent shadow-sm shadow-slate-200/50 !mt-0 !pt-2">
+              <TabsList className="flex w-full h-auto p-1 bg-slate-200/80 rounded-xl overflow-x-auto shadow-inner">
+                <TabsTrigger 
+                  value="import" 
+                  className="rounded-lg data-[state=active]:bg-white data-[state=active]:shadow-sm transition-all flex items-center justify-center gap-1.5 flex-1 min-h-[44px] px-2 whitespace-nowrap"
+                >
+                  <BookOpen className="h-4 w-4 shrink-0" />
+                  <span className="text-sm font-medium">辨識萃取</span>
+                </TabsTrigger>
+                <TabsTrigger 
+                  value="library" 
+                  className="rounded-lg data-[state=active]:bg-white data-[state=active]:shadow-sm transition-all flex items-center justify-center gap-1.5 flex-1 min-h-[44px] px-2 whitespace-nowrap"
+                >
+                  <BookText className="h-4 w-4 shrink-0" />
+                  <span className="text-sm font-medium">雲端單字</span>
+                </TabsTrigger>
+                <TabsTrigger 
+                  value="quiz" 
+                  className="rounded-lg data-[state=active]:bg-white data-[state=active]:shadow-sm transition-all flex items-center justify-center gap-1.5 flex-1 min-h-[44px] px-2 whitespace-nowrap"
+                >
+                  <BrainCircuit className="h-4 w-4 shrink-0" />
+                  <span className="text-sm font-medium">智能測驗</span>
+                </TabsTrigger>
+              </TabsList>
+            </div>
 
             <div className="mt-4">
               <div className={activeTab === "import" ? "block" : "hidden"}>
-                <motion.div
-                  initial={{ opacity: 0, y: 10 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ duration: 0.2 }}
-                >
-                  <ImportPanel />
-                </motion.div>
+                <ImportPanel />
               </div>
               <div className={activeTab === "library" ? "block" : "hidden"}>
-                <motion.div
-                  initial={{ opacity: 0, y: 10 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ duration: 0.2 }}
-                >
-                  <LibraryPanel />
-                </motion.div>
+                <LibraryPanel isActive={activeTab === "library"} />
               </div>
               <div className={activeTab === "quiz" ? "block" : "hidden"}>
-                <motion.div
-                  initial={{ opacity: 0, y: 10 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ duration: 0.2 }}
-                >
-                  <QuizPanel />
-                </motion.div>
+                <QuizPanel />
               </div>
             </div>
-          </Tabs>
           </div>
         )}
+        </div>
       </main>
+      </Tabs>
 
       <Toaster position="top-center" richColors />
     </div>

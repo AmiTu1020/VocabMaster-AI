@@ -67,6 +67,11 @@
   - 重新標準化資料映射：在解構 `.data()` 時，確保將 `id: doc.id` 覆蓋在屬性最尾端，或作顯式屬性聲明，從而在資料層保證 UI 全生命週期內每個 VocabEntry 只有唯一權威 ID。
   - 此舉完美排除了 StrictMode 或 React 18 Concurrent Rendering 掛載 and 重新訂閱時帶來的短暫狀態不同步。
 
+- **行動版瀏覽器網址列自適應與內部滾動機制 (Mobile Browser URL Bar & Sticky Fix Layout - 2026/06/20)**:
+  - **背景痛點**：行動版 Safari / Chrome 在向下滑動時會自動隱藏頂部網址列（URL Bar），導致視窗高度重新計算，使綁定於 `min-h-screen` 和基於全域滾動的 `position: sticky` 元素瞬間失效或嚴重跳動脫排。
+  - **全域滾動權接管 (Scroll Takeover)**：將最外層 `App` 根容器高度設定為支援動態視口的 `h-[100dvh] flex flex-col overflow-hidden`，捨棄 `min-h-screen`，從全域 Window/Body 徹底拿走滾動權限。
+  - **內部驅動分層滾動 (Internal Y-Axis Scroll)**：將主要內容區塊獨立封裝並設定為 `flex-1 overflow-y-auto`。此舉使得 `position: sticky` 的各級導覽列僅受內部 flex 容器滾動計算，完全免疫因網址列伸縮帶來的外部視窗大小改變，確保 Sticky 排版在行動設備上實現鋼鐵般的完美吸頂與平滑度。
+
 - **三維常忘單字異步更新架構 (Multi-Entry Async Star Persistence Model - 2026/06/12)**:
   - **資料同步策略**：實作 `toggleWordHardById(wordId, currentStatus, sessionIndex, wordStr)` 多維同步函數。在使用者於測驗卡、答畢提醒卡、完賽結算複習清單點擊星星標記時，同步進行三層狀態變更：
     1. **本機測驗序列更新**：變更 `sessionList` 單字對象之 `.isHard` 屬性，確保測驗主卡片與結算卡片立即動態重繪。
@@ -80,6 +85,25 @@
 
 - **複習清單 TTS 語音朗讀與冒泡防禦 (Speech Synthesis Integration in Quiz Review - 2026/06/12)**:
   - **實作**：將現有 Web Speech API (`window.speechSynthesis`) 全局發音器引用至大滿貫結算畫面。為本輪複習清單的每個拼寫單字追加獨立的喇叭播放按鈕，其 `onClick` 函數內部呼叫 `e.stopPropagation()` 防止觸發卡片父容器其他非預設行為，提供直觀、立竿見影的高效糾錯學習模式。
+
+- **自適應雙層/三層置頂控制系統 (Adaptive Two-Tier/Three-Tier Sticky Stacking CSS Layout - 2026/06/20)**:
+  - **CSS 層疊與位置配置**：精細化重塑頁面響應式骨架，避免由於 `scrollIntoView` 呼喚時將核心控制鈕捲出移動版視口之外、或是造成置頂與導覽被推跑：
+    1. **主窗面標題欄 (App Header)**：手機端設為 `relative` 伴隨滑動自如收合，將螢幕高度還給主要學習視窗；桌機端設為 `sm:sticky top-0 z-30 border-b bg-white/80`，常駐固定。
+    2. **TabsList 置頂容器 (Tabs navigation)**：在 `App.tsx` 中將分頁頁籤 `<TabsList>` 封裝在 `sticky top-0 sm:top-[64px] z-20 bg-slate-50/95 backdrop-blur-sm py-2` 特性容器中。巧妙運用 `mb-4` 及負邊距 `-mx-4 px-4 sm:-mx-0` 讓它在移動端能以 `top-0` 完美替代滾走的 Header，而 PC 端大螢幕則以 `top-[64px]` 無縫承接在 Header 之下。
+    3. **底層功能分類與播放器控制條**：在 `LibraryPanel.tsx` 中將 `雲端存檔 / 智慧分類` 條設定為 `sticky top-[64px] sm:top-[128px] z-10 bg-white/95 backdrop-blur-md`。在手機上它能精確吸附在高度為 64px 的 Tabs 之下（`top-[64px]`）；在桌機端則恰到好處排列於 `top-[128px]`，實現齒輪般的精準對齊。
+  - **優化成果**：不論在桌機還是手機 Native / Chrome 瀏覽、或是 nested iframe preview 環境內，當單字連播觸發 auto-scroll 或使用者手動滾動頁面時，頂部面板皆能以絕對、牢不可破的形式完美「keep 住」在螢幕最上方，控制面板無任何位移、重疊或遮擋，達到頂尖音訊播放器級別的操作手感。
+
+- **分頁激活狀態感知與 TTS 語音發音即時截載 (Smart Tab-Switching Active Sensing & Speech Cancellation - 2026/06/20)**:
+  - **核心邏輯**：
+    1. **屬性注入 (Prop Injection)**：在 `LibraryPanel.tsx` 導出元件中引入 `isActive?: boolean`（預設為 `true`）。
+    2. **狀態綁定 (Binding)**：在主介面 `App.tsx` 中 rendering `<LibraryPanel isActive={activeTab === "library"} />`，使其與選中的分頁 activeTab 建立起直接的單向數據流。
+    3. **即時暫停副作用 (Auto-Pause Effect)**：在 `LibraryPanel.tsx` 中建立依賴於 `[isActive, touringIndex, isPaused]` 的 React `useEffect`。當偵測到 `isActive` 轉向 `false` 且當前為「連播進行中」時，即刻呼叫 `setIsPaused(true)` 讓連播進入「暫停狀態」。
+    4. **語音即時取消 (Web Speech Cancellation)**：在自動暫停的同時，直接調用 Web Speech API 原生端點 `window.speechSynthesis.cancel()` 瞬時清除並中斷背景正處於工作中的任何單字或例句語音合成，徹底根除跨 TAB 播放引起的繁雜語音疊加，實現完美的音訊流管理。
+
+- **AI 辨識萃取針對子句與片語的深度搜索防重複保護 (Phrase Variation Search Mechanism - 2026/06/20)**:
+  - **核心邏輯**：
+    1. **Schema 與 Prompt 擴充**：於 `server.ts` 內調整 Gemini 的 API Schema，新增並請求 AI 萃取出 `searchVariations` 字串陣列。若截圖目標是片語（如：`a couple of`）但單詞辨識出 `Couple`，則 AI 會在此回傳其變體與原始片語內容。
+    2. **展開查詢樹**：於 `ImportPanel.tsx` 中將提取之 `word`、`baseForm` 以及 `searchVariations` 與其大小寫字串變化版本全部攤平至一個陣列中，接續運用 ES6 `[...new Set(array)]` 原型函數做去重，最終使用 `where("word", "in", searchTerms)` 完整核對 Firestore，若該筆資料早已於雲端內存在如 `a couple (of)` 之形式，即可精準命中並排除重複。
 
 
 

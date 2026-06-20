@@ -65,11 +65,13 @@ async function extractVocabFromImageServer(base64Image: string, mimeType: string
   - Each entry must be a complete word.
   
   Extraction Targets for each entry:
-  1. Main Word: The word being defined or listed.
-  2. Phonetics: Look for phonetic transcriptions (such as in slashes /.../).
-  3. Translation: Traditional Chinese explanation (繁體中文).
-  4. Example Sentences: Extract 1-3 usage sentences shown.
-  5. Quiz Challenge (quizChallenge): Generate or extract a fill-in-the-blank question for learning this word.
+  1. Main Word: The word or phrase being defined or listed. If it's a phrase (e.g., "a couple of"), extract the full phrase. Check the highlights in the example sentence carefully.
+  2. Base/Dictionary Form (baseForm): The root form of the word (singular for nouns, base verb for verbs, e.g., "candidates" -> "candidate", "ran" -> "run").
+  3. Search Variations (searchVariations): An array of strings containing likely database variations, synonymous phrases, or highlighted phrases. E.g., if the word is "Couple", but the sentence highlights "a couple of", include "a couple", "a couple of", "a couple (of)", "couple".
+  4. Phonetics: Look for phonetic transcriptions (such as in slashes /.../).
+  5. Translation: Traditional Chinese explanation (繁體中文).
+  6. Example Sentences: Extract 1-3 usage sentences shown.
+  7. Quiz Challenge (quizChallenge): Generate or extract a fill-in-the-blank question for learning this word.
      - CRITICAL: You MUST mimic and adapt the exact instructions, hints, prompts, or clues shown on the screenshot! If the image lists specific definitions, clues, words starting with a particular letter, or options, you must synthesize and incorporate them into "contextChinese" (or "translation"). The goal is to preserve the visual and educational pedagogy shown on the image.
      - The object must contain:
        - "sentence": The full English sentence incorporating the word (e.g., from the example).
@@ -99,6 +101,11 @@ async function extractVocabFromImageServer(base64Image: string, mimeType: string
             type: Type.OBJECT,
             properties: {
               word: { type: Type.STRING },
+              baseForm: { type: Type.STRING },
+              searchVariations: {
+                type: Type.ARRAY,
+                items: { type: Type.STRING }
+              },
               phonetic: { type: Type.STRING },
               translation: { type: Type.STRING },
               examples: {

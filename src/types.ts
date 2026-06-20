@@ -1,6 +1,8 @@
 export interface VocabEntry {
   id: string;
   word: string;
+  baseForm?: string;
+  searchVariations?: string[];
   phonetic: string;
   translation: string;
   examples: string[];

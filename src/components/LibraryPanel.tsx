@@ -92,7 +92,7 @@ const processMixedSentence = (sentence: string) => {
   return { english: sentence, extractedChinese: "" };
 };
 
-export function LibraryPanel() {
+export function LibraryPanel({ isActive = true }: { isActive?: boolean }) {
   const [vocab, setVocab] = useState<VocabEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
@@ -125,9 +125,18 @@ export function LibraryPanel() {
     return matchesSearch && matchesFilter;
   });
 
+  // Pause tour automatically if the panel becomes inactive (e.g., user switches tabs)
+  useEffect(() => {
+    if (!isActive && touringIndex >= 0 && !isPaused) {
+      setIsPaused(true);
+      window.speechSynthesis.cancel(); // Stop talking immediately
+      toast.info("已自動暫停單字連播播放");
+    }
+  }, [isActive, touringIndex, isPaused]);
+
   // Vocabulary Tour Logic
   useEffect(() => {
-    if (touringIndex >= 0 && touringIndex < filteredVocab.length && !isPaused) {
+    if (touringIndex >= 0 && touringIndex < filteredVocab.length && !isPaused && isActive) {
       const currentItem = filteredVocab[touringIndex];
       
       // Auto scroll to the current item
@@ -154,7 +163,7 @@ export function LibraryPanel() {
     return () => {
       if (tourTimeoutRef.current) clearTimeout(tourTimeoutRef.current);
     };
-  }, [touringIndex, isPaused, filteredVocab.length]);
+  }, [touringIndex, isPaused, filteredVocab.length, isActive]);
 
   const startTour = () => {
     if (filteredVocab.length === 0) return;
@@ -571,7 +580,7 @@ export function LibraryPanel() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between sticky top-[64px] z-20 bg-white/95 backdrop-blur-md py-3 border-b border-slate-100 -mx-4 px-4 sm:-mx-1 sm:px-1 shadow-sm sm:shadow-none">
+      <div className="flex items-center justify-between sticky top-[72px] z-30 bg-slate-50/95 sm:bg-white/95 backdrop-blur-md transform-gpu py-3 border-b border-slate-100 -mx-4 px-4 sm:-mx-1 sm:px-1 shadow-sm sm:shadow-none">
         <h2 className="text-sm font-bold text-slate-500 flex items-center gap-2">
           <BookOpen className="h-4 w-4" />
           雲端存檔 / 智慧分類

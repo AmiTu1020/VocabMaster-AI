@@ -8,6 +8,108 @@ import { collection, addDoc, serverTimestamp, query, where, getDocs, doc, update
 import { toast } from "sonner";
 import { VocabEntry } from "@/types";
 
+function generatePhraseVariants(phrase: string): string[] {
+  const clean = phrase.trim().replace(/\s+/g, " ");
+  if (!clean) return [];
+  
+  const variants: string[] = [clean, clean.toLowerCase()];
+  
+  // 1. 如果原始片語包含括號，如 "a couple (of)"，衍生出 "a couple of" 和 "a couple"
+  if (clean.includes("(") && clean.includes(")")) {
+    const withParenRemoved = clean.replace(/\([^)]*\)/g, "").replace(/\s+/g, " ").trim();
+    const withParenIncluded = clean.replace(/[()]/g, "").replace(/\s+/g, " ").trim();
+    variants.push(withParenRemoved);
+    variants.push(withParenRemoved.toLowerCase());
+    variants.push(withParenIncluded);
+    variants.push(withParenIncluded.toLowerCase());
+  }
+  
+  // 2. 如果包含省略符等，產生不含省略符的簡潔版，以及各式省略變化形
+  const hasEllipsis = clean.includes("...") || clean.includes("..");
+  const hasPlaceholders = clean.includes("sth") || clean.includes("sb") || clean.includes("something") || clean.includes("somebody") || clean.includes("someone");
+  
+  if (hasEllipsis || hasPlaceholders) {
+    const normalizedNoSymbols = clean
+      .replace(/\.\.\./g, "")
+      .replace(/\s+/g, " ")
+      .trim();
+    variants.push(normalizedNoSymbols);
+    variants.push(normalizedNoSymbols.toLowerCase());
+    
+    // 互換 sth ⇔ ... ⇔ something
+    const alt1 = clean.replace(/\.\.\./g, "sth").replace(/\s+/g, " ").trim();
+    const alt2 = clean.replace(/\.\.\./g, "something").replace(/\s+/g, " ").trim();
+    const alt3 = clean.replace(/sth/g, "...").replace(/\s+/g, " ").trim();
+    const alt4 = clean.replace(/something/g, "...").replace(/\s+/g, " ").trim();
+    
+    variants.push(alt1, alt1.toLowerCase());
+    variants.push(alt2, alt2.toLowerCase());
+    variants.push(alt3, alt3.toLowerCase());
+    variants.push(alt4, alt4.toLowerCase());
+  } else {
+    // 3. 如果只是正常的片語 (如 "have in common" 或 "a couple of")
+    const words = clean.split(" ");
+    if (words.length >= 2) {
+      // 3a. 自動在第 1 個字（通常是動詞）後加入 sth 或 ... 
+      // 如 "have in common" => "have ... in common", "have sth in common"
+      const firstWord = words[0];
+      const rest = words.slice(1).join(" ");
+      
+      variants.push(`${firstWord} ... ${rest}`);
+      variants.push(`${firstWord}...${rest}`);
+      variants.push(`${firstWord} sth ${rest}`);
+      variants.push(`${firstWord} something ${rest}`);
+      variants.push(`${firstWord} sb ${rest}`);
+      
+      variants.push(`${firstWord.toLowerCase()} ... ${rest.toLowerCase()}`);
+      variants.push(`${firstWord.toLowerCase()}...${rest.toLowerCase()}`);
+      variants.push(`${firstWord.toLowerCase()} sth ${rest.toLowerCase()}`);
+      variants.push(`${firstWord.toLowerCase()} something ${rest.toLowerCase()}`);
+    }
+  }
+  
+  return variants.map(v => v.trim().replace(/\s+/g, " ")).filter(v => v.length > 0);
+}
+
+const getSearchTerms = (word: string, baseForm?: string, searchVariations?: string[]): string[] => {
+  const wordClean = word.trim();
+  const baseFormClean = baseForm ? baseForm.trim() : "";
+  
+  let rawList: string[] = [wordClean, wordClean.toLowerCase()];
+  
+  // 融合 phrase variants
+  rawList = rawList.concat(generatePhraseVariants(wordClean));
+  
+  if (baseFormClean) {
+    rawList.push(baseFormClean);
+    rawList.push(baseFormClean.toLowerCase());
+    rawList.push(baseFormClean.charAt(0).toUpperCase() + baseFormClean.slice(1).toLowerCase());
+    rawList = rawList.concat(generatePhraseVariants(baseFormClean));
+  }
+  
+  if (searchVariations && searchVariations.length > 0) {
+    searchVariations.forEach(v => {
+      if (v) {
+        rawList.push(v.trim());
+        rawList.push(v.trim().toLowerCase());
+        rawList = rawList.concat(generatePhraseVariants(v));
+      }
+    });
+  }
+  
+  rawList.push(wordClean.charAt(0).toUpperCase() + wordClean.slice(1).toLowerCase());
+
+  // 去重並過濾空白
+  let finalTerms = [...new Set(rawList)].map(t => t.trim().replace(/\s+/g, " ")).filter(t => !!t);
+  
+  // Firestore limit is 10
+  if (finalTerms.length > 10) {
+    finalTerms = finalTerms.slice(0, 10);
+  }
+  
+  return finalTerms;
+};
+
 export function ImportPanel() {
   const [isUploading, setIsUploading] = useState(false);
   const [isSaving, setIsSaving] = useState<string | null>(null);
@@ -137,11 +239,12 @@ export function ImportPanel() {
 
         for (const vocab of resultList) {
           const wordClean = vocab.word.trim();
+          const searchTerms = getSearchTerms(vocab.word, vocab.baseForm, vocab.searchVariations);
           
           const q = query(
             collection(db, "vocab"),
             where("creatorId", "==", auth.currentUser.uid),
-            where("word", "==", wordClean)
+            where("word", "in", searchTerms)
           );
           const snapshot = await getDocs(q);
 
@@ -434,6 +537,8 @@ export function ImportPanel() {
     setIsSaving(item.id);
     try {
       const wordClean = item.word.trim();
+      const searchTerms = getSearchTerms(item.word, item.baseForm, item.searchVariations);
+      
       // Determine if this is the last item before state update
       const isLastItem = extractedItems.length === 1;
 
@@ -441,7 +546,7 @@ export function ImportPanel() {
       const q = query(
         collection(db, "vocab"),
         where("creatorId", "==", auth.currentUser.uid),
-        where("word", "==", wordClean)
+        where("word", "in", searchTerms)
       );
       const querySnapshot = await getDocs(q);
       
