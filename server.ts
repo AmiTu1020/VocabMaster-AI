@@ -65,7 +65,7 @@ async function extractVocabFromImageServer(base64Image: string, mimeType: string
   - Each entry must be a complete word.
   
   Extraction Targets for each entry:
-  1. Main Word: The word or phrase being defined or listed. If it's a phrase (e.g., "a couple of"), extract the full phrase. Check the highlights in the example sentence carefully.
+  1. Main Word: The word or phrase being defined or listed. If it's a phrase (e.g., "a couple of"), extract the full phrase. Check the highlights in the example sentence carefully. CRITICAL: If the extracted word is an infinitive verb starting with "to " (e.g., "to evolve"), you MUST remove the "to " prefix and just extract the verb itself (e.g., "evolve").
   2. Base/Dictionary Form (baseForm): The root form of the word (singular for nouns, base verb for verbs, e.g., "candidates" -> "candidate", "ran" -> "run").
   3. Search Variations (searchVariations): An array of strings containing likely database variations, synonymous phrases, or highlighted phrases. E.g., if the word is "Couple", but the sentence highlights "a couple of", include "a couple", "a couple of", "a couple (of)", "couple".
   4. Phonetics: Look for phonetic transcriptions (such as in slashes /.../). If there are no phonetics visible in the image, you MUST generate and supply the standard American English phonetic symbols for the word (e.g. "/ˈtʃærəti/"). Do not leave it blank.

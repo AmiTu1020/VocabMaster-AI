@@ -567,6 +567,66 @@ export function LibraryPanel({ isActive = true }: { isActive?: boolean }) {
     }
   };
 
+  const [isCleaningTo, setIsCleaningTo] = useState(false);
+
+  const cleanupToPrefix = async () => {
+    if (!auth.currentUser) return;
+    
+    const itemsToClean = vocab.filter(item => {
+      const word = String(item.word || "").toLowerCase();
+      const baseForm = String(item.baseForm || "").toLowerCase();
+      return (word.startsWith("to ") && word.length > 3) || (baseForm.startsWith("to ") && baseForm.length > 3);
+    });
+
+    if (itemsToClean.length === 0) {
+      toast.info("沒有需要清理的單字 (皆無 to 前綴)！");
+      return;
+    }
+
+    setIsCleaningTo(true);
+    let successCount = 0;
+
+    toast.loading(`正在為 ${itemsToClean.length} 個單字清理 to 前綴...`, { id: "clean-to-progress" });
+
+    try {
+      for (const item of itemsToClean) {
+        let newWord = String(item.word || "");
+        let newBaseForm = String(item.baseForm || "");
+        let needsUpdate = false;
+
+        if (newWord.toLowerCase().startsWith("to ") && newWord.length > 3) {
+          newWord = newWord.substring(3).trim();
+          needsUpdate = true;
+        }
+
+        if (newBaseForm.toLowerCase().startsWith("to ") && newBaseForm.length > 3) {
+          newBaseForm = newBaseForm.substring(3).trim();
+          needsUpdate = true;
+        }
+
+        if (needsUpdate) {
+          const docRef = doc(db, "vocab", item.id);
+          await updateDoc(docRef, {
+            word: newWord,
+            baseForm: newBaseForm
+          });
+          successCount++;
+        }
+      }
+
+      toast.dismiss("clean-to-progress");
+      if (successCount > 0) {
+        toast.success(`成功為 ${successCount} 個單字清理 to 前綴！🧹`);
+      }
+    } catch (error: any) {
+      toast.dismiss("clean-to-progress");
+      console.error(error);
+      toast.error(`清理前綴時發生錯誤: ${error?.message || error}`);
+    } finally {
+      setIsCleaningTo(false);
+    }
+  };
+
   const deleteItem = async (id: string, word: string) => {
     if (deletingId !== id) {
       setDeletingId(id);
@@ -651,6 +711,11 @@ export function LibraryPanel({ isActive = true }: { isActive?: boolean }) {
               <Button disabled={isSupplementingPhonetics} variant="ghost" size="sm" onClick={supplementPhonetics} className="h-8 gap-1 text-slate-500 hover:text-slate-700 hover:bg-slate-50">
                 {isSupplementingPhonetics ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Languages className="h-3.5 w-3.5 text-primary" />}
                 <span className="text-xs font-bold hidden sm:inline">補全音標</span>
+              </Button>
+              <div className="w-[1px] h-4 bg-slate-200 mx-1"></div>
+              <Button disabled={isCleaningTo} variant="ghost" size="sm" onClick={cleanupToPrefix} className="h-8 gap-1 text-slate-500 hover:text-slate-700 hover:bg-slate-50">
+                {isCleaningTo ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5 text-amber-500" />}
+                <span className="text-xs font-bold hidden sm:inline">清理 to 前綴</span>
               </Button>
               <div className="w-[1px] h-4 bg-slate-200 mx-1"></div>
               <Button disabled={isDeduplicating} variant="ghost" size="sm" onClick={deduplicateDatabase} className="h-8 gap-1 text-slate-500 hover:text-slate-700 hover:bg-slate-50">

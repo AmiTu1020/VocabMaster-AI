@@ -121,3 +121,12 @@
     - **Prompt 嚴格規範**：強制賦予 Gemini 專家級辭書學者 (Expert Lexicographer) 角色，並嚴格規定回傳標準美式 K.K. 音標（Standard American English phonetic symbols, IPA），且需包含斜線包裹（如 `/ˈtʃærəti/`）。透過 `responseSchema` 綁定 JSON 陣列結構 `[{ word, phonetic }]`，確保前端解析 100% 穩定。
   - **萃取階段強制補全 (Extraction-Phase Enforcement)**：
     - 同步升級 `/api/gemini/extract-vocab` 伺服器端點內的 AI 提示詞 (Prompt)，指示模型在分析圖片時，若圖片中未見明顯音標，**必須自動生成並補全標準美式音標**，不可留空。達成從源頭建檔到事後修補的完美音標覆蓋率。
+
+- **動詞不定詞前端與 AI 雙向裁切防禦架構 (Infinitive Prefix Stripping & Retroactive Cleanup - 2026/06/27)**:
+  - **背景痛點**：當截圖中辨識出 `to evolve` 這類附帶 `to ` 前置詞的動詞不定詞時，會直接破壞資料庫單一詞性的純粹度，阻礙防重複搜尋。
+  - **提取層預防 (Extraction-Phase Prevention)**：
+    - **後端 AI 指令升級**：在 `server.ts` 內加入 `CRITICAL` 提示規則，嚴格要求 Gemini 在擷取字元時若發現 `to ` 前綴（例：`to evolve`），必須自動截斷並只回傳純動詞 (`evolve`)。
+    - **前端服務二次防護 (Frontend Payload Sanitization)**：於 `geminiService.ts` 解析 JSON 回傳時注入字串裁切機制，凡偵測到 `word` 或 `baseForm` 開頭為 `to ` 且字串長度大於 3，強制透過 `substring(3).trim()` 處理乾淨，確保 100% 寫入安全的字串格式。
+  - **事後修補機制 (Retroactive Database Cleanup)**：
+    - 於 `LibraryPanel.tsx` 實作 `cleanupToPrefix` 批次掃描函數，前端篩選出 Firestore 歷史紀錄中帶有 `to ` 前綴的不定詞。
+    - 使用客戶端批次處理並透過 `updateDoc` 將乾淨的動詞更新回 Firebase，解決既有庫存單字的遺留問題。

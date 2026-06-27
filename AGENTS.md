@@ -21,3 +21,4 @@
 ## AI 辨識與補全規則 (AI Extraction & Supplement Rules)
 
 - **強制生成美式音標**：在呼叫 Gemini 進行圖片文字辨識萃取（Extract Vocab）或是批次補全音標功能時，**必須**強制要求 AI 生成標準美式 K.K. 音標（Standard American English phonetic symbols）。如果圖片中沒有音標，也要請 AI 根據單字自動生成並提供（例如 `/ˈtʃærəti/`），不可留空。
+- **動詞不定詞自動過濾 (Infinitive Prefix Stripping)**：在指示 Gemini 進行圖片文字辨識與單字擷取時，若目標單字為不定詞且開頭帶有 "to "（例如 "to evolve"），**必須**要求 AI 將 "to " 去除，只保留動詞本身（例如 "evolve"）。前端服務也須實作預防機制，將任何前綴為 "to " (含空格) 的字串處理乾淨後再寫入資料庫，避免影響單字搜尋與測驗體驗。

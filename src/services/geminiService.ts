@@ -24,7 +24,30 @@ export async function extractVocabFromImage(base64Image: string, mimeType: strin
     throw new Error(errData.error || "圖片辨識失敗，請檢查網路或 API Key 設定");
   }
 
-  return await response.json();
+  const data = await response.json();
+  
+  if (Array.isArray(data)) {
+    return data.map((item: any) => {
+      let word = item.word || "";
+      let baseForm = item.baseForm || "";
+      
+      if (word.toLowerCase().startsWith("to ") && word.length > 3) {
+        word = word.substring(3).trim();
+      }
+      
+      if (baseForm.toLowerCase().startsWith("to ") && baseForm.length > 3) {
+        baseForm = baseForm.substring(3).trim();
+      }
+      
+      return {
+        ...item,
+        word,
+        baseForm
+      };
+    });
+  }
+
+  return data;
 }
 
 /**
