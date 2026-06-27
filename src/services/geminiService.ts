@@ -81,3 +81,23 @@ export async function explainMisconception(
     return `「${wrongInput}」與此處句意不太相符。想想看別的單字，或是調整看看拼寫吧！`;
   }
 }
+
+/**
+ * Generates American phonetic symbols for a batch of English words.
+ */
+export async function generatePhoneticsBatch(words: string[]): Promise<{ word: string; phonetic: string }[]> {
+  const response = await fetch("/api/gemini/generate-phonetics-batch", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ words }),
+  });
+
+  if (!response.ok) {
+    const errData = await response.json().catch(() => ({}));
+    throw new Error(errData.error || "生成美式音標失敗");
+  }
+
+  return await response.json() as { word: string; phonetic: string }[];
+}

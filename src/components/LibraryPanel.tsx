@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Volume2, Trash2, Search, BookOpen, Loader2, Play, Pause, Square, Star, StarOff, Filter, Sparkles, ChevronDown, ChevronUp } from "lucide-react";
+import { Volume2, Trash2, Search, BookOpen, Loader2, Play, Pause, Square, Star, StarOff, Filter, Sparkles, ChevronDown, ChevronUp, Languages } from "lucide-react";
+import { generatePhoneticsBatch } from "@/services/geminiService";
 import { db, auth } from "@/lib/firebase";
 import { collection, query, where, onSnapshot, deleteDoc, doc, orderBy, updateDoc, setDoc } from "firebase/firestore";
 import { toast } from "sonner";
@@ -507,6 +508,65 @@ export function LibraryPanel({ isActive = true }: { isActive?: boolean }) {
     }
   };
 
+  const [isSupplementingPhonetics, setIsSupplementingPhonetics] = useState(false);
+
+  const supplementPhonetics = async () => {
+    if (!auth.currentUser) return;
+    
+    const missingPhoneticsList = vocab.filter(item => {
+      const phonetic = String(item.phonetic || "").trim();
+      return !phonetic || phonetic === "/" || phonetic === "//" || phonetic.toLowerCase() === "n/a";
+    });
+
+    if (missingPhoneticsList.length === 0) {
+      toast.info("所有雲端單字皆已擁有美式音標！🎉");
+      return;
+    }
+
+    setIsSupplementingPhonetics(true);
+    let successCount = 0;
+
+    toast.loading(`正在為 ${missingPhoneticsList.length} 個單字補全美式音標...`, { id: "phonetic-progress" });
+
+    try {
+      const batchSize = 15;
+      for (let i = 0; i < missingPhoneticsList.length; i += batchSize) {
+        const chunk = missingPhoneticsList.slice(i, i + batchSize);
+        const wordsToGenerate = chunk.map(c => c.word);
+
+        try {
+          const generatedList = await generatePhoneticsBatch(wordsToGenerate);
+          
+          for (const item of chunk) {
+            const match = generatedList.find(g => g.word.toLowerCase() === item.word.toLowerCase());
+            if (match && match.phonetic) {
+              const docRef = doc(db, "vocab", item.id);
+              await updateDoc(docRef, {
+                phonetic: match.phonetic.trim()
+              });
+              successCount++;
+            }
+          }
+        } catch (chunkErr) {
+          console.error("Failed to generate phonetic batch chunk:", chunkErr);
+        }
+      }
+
+      toast.dismiss("phonetic-progress");
+      if (successCount > 0) {
+        toast.success(`成功為 ${successCount} 個單字補全美式音標！🇺🇸`);
+      } else {
+        toast.error("補全音標失敗，請重試或確認 API Key 設定");
+      }
+    } catch (error: any) {
+      toast.dismiss("phonetic-progress");
+      console.error(error);
+      toast.error(`補全音標時發生錯誤: ${error?.message || error}`);
+    } finally {
+      setIsSupplementingPhonetics(false);
+    }
+  };
+
   const deleteItem = async (id: string, word: string) => {
     if (deletingId !== id) {
       setDeletingId(id);
@@ -588,6 +648,11 @@ export function LibraryPanel({ isActive = true }: { isActive?: boolean }) {
         <div className="flex items-center gap-2">
           {filteredVocab.length > 0 && (
             <div className="flex items-center bg-white border border-slate-200 rounded-lg p-1 shadow-sm gap-1">
+              <Button disabled={isSupplementingPhonetics} variant="ghost" size="sm" onClick={supplementPhonetics} className="h-8 gap-1 text-slate-500 hover:text-slate-700 hover:bg-slate-50">
+                {isSupplementingPhonetics ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Languages className="h-3.5 w-3.5 text-primary" />}
+                <span className="text-xs font-bold hidden sm:inline">補全音標</span>
+              </Button>
+              <div className="w-[1px] h-4 bg-slate-200 mx-1"></div>
               <Button disabled={isDeduplicating} variant="ghost" size="sm" onClick={deduplicateDatabase} className="h-8 gap-1 text-slate-500 hover:text-slate-700 hover:bg-slate-50">
                 {isDeduplicating ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
                 <span className="text-xs font-bold hidden sm:inline">合併重複單字</span>

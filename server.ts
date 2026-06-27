@@ -68,7 +68,7 @@ async function extractVocabFromImageServer(base64Image: string, mimeType: string
   1. Main Word: The word or phrase being defined or listed. If it's a phrase (e.g., "a couple of"), extract the full phrase. Check the highlights in the example sentence carefully.
   2. Base/Dictionary Form (baseForm): The root form of the word (singular for nouns, base verb for verbs, e.g., "candidates" -> "candidate", "ran" -> "run").
   3. Search Variations (searchVariations): An array of strings containing likely database variations, synonymous phrases, or highlighted phrases. E.g., if the word is "Couple", but the sentence highlights "a couple of", include "a couple", "a couple of", "a couple (of)", "couple".
-  4. Phonetics: Look for phonetic transcriptions (such as in slashes /.../).
+  4. Phonetics: Look for phonetic transcriptions (such as in slashes /.../). If there are no phonetics visible in the image, you MUST generate and supply the standard American English phonetic symbols for the word (e.g. "/ˈtʃærəti/"). Do not leave it blank.
   5. Translation: Traditional Chinese explanation (繁體中文).
   6. Example Sentences: Extract 1-3 usage sentences shown.
   7. Quiz Challenge (quizChallenge): Generate or extract a fill-in-the-blank question for learning this word.
@@ -391,6 +391,76 @@ async function startServer() {
     } catch (error: any) {
       console.error("API explain-misconception failed:", error);
       res.status(500).json({ error: error.message || "Explanation failed" });
+    }
+  });
+
+  app.post("/api/gemini/generate-phonetics-batch", async (req, res) => {
+    try {
+      const { words } = req.body;
+      if (!words || !Array.isArray(words)) {
+        return res.status(400).json({ error: "Missing or invalid words list" });
+      }
+      if (words.length === 0) {
+        return res.json([]);
+      }
+
+      const apiKey = getSanitizedApiKey();
+      if (!apiKey) {
+        return res.status(400).json({ error: "請先在 Settings > Secrets 中設定 GEMINI_API_KEY" });
+      }
+
+      const ai = new GoogleGenAI({ 
+        apiKey,
+        httpOptions: {
+          headers: {
+            'User-Agent': 'aistudio-build',
+          }
+        }
+      });
+
+      const prompt = `You are an expert lexicographer specializing in American English pronunciation and phonetic transcriptions (specifically standard K.K. phonetic symbols, or standard American IPA).
+Given a list of English words or phrases, please provide the standard American English phonetic symbols for each of them.
+Ensure each phonetic symbol is accurate, standard, and enclosed in slashes like /.../.
+
+Input list:
+${JSON.stringify(words)}
+
+Output a JSON array of objects, where each object contains:
+- "word": the exact word or phrase from the input.
+- "phonetic": its standard American English phonetic symbol (e.g. "/ˈtʃærəti/").`;
+
+      const response = await withTimeout(
+        ai.models.generateContent({
+          model: "gemini-3.5-flash",
+          contents: prompt,
+          config: {
+            responseMimeType: "application/json",
+            responseSchema: {
+              type: Type.ARRAY,
+              items: {
+                type: Type.OBJECT,
+                properties: {
+                  word: { type: Type.STRING },
+                  phonetic: { type: Type.STRING }
+                },
+                required: ["word", "phonetic"]
+              }
+            }
+          }
+        }),
+        45000,
+        "生成美式音標超時"
+      );
+
+      const text = response.text;
+      if (!text) {
+        throw new Error("Empty response from model");
+      }
+
+      res.json(JSON.parse(text));
+    } catch (error: any) {
+      console.error("API generate-phonetics-batch failed:", error);
+      res.status(500).json({ error: error.message || "Failed to generate phonetics" });
     }
   });
 
