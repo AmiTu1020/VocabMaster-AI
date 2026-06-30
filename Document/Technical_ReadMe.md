@@ -130,3 +130,8 @@
   - **事後修補機制 (Retroactive Database Cleanup)**：
     - 於 `LibraryPanel.tsx` 實作 `cleanupToPrefix` 批次掃描函數，前端篩選出 Firestore 歷史紀錄中帶有 `to ` 前綴的不定詞。
     - 使用客戶端批次處理並透過 `updateDoc` 將乾淨的動詞更新回 Firebase，解決既有庫存單字的遺留問題。
+
+- **測驗錯題無限重播機制 (Quiz Error Retry-Queue Logic - 2026/06/27)**:
+  - **狀態擴充**：於 `types.ts` 中的 `VocabEntry` 介面新增 `isRetry?: boolean` 旗標，用以標記由錯題重播機制所產生的幽靈單字物件。
+  - **動態陣列附加 (Dynamic Array Appending)**：在 `QuizPanel.tsx` 的 `handleNextQuestion` 中，若偵測到使用者在此題的 `attempts > 0` 或 `hasRevealedAnswer` 為 true，即將該單字複製一份並附加 `isRetry: true` 屬性，`push` 至 `sessionList` 的尾端。React 狀態更新後，UI 上的總題數分母（`sessionList.length`）會自動擴展。
+  - **資料隔離與純淨度**：結算畫面的「答對字數 (correctCount)」只在 `isRetry` 為 falsy 的首輪作答正確時才遞增；而複習清單 (Review List) 的迴圈渲染則透過 `sessionList.filter(item => !item.isRetry)` 將幽靈重試題目完全剔除，確保使用者體驗中「原始 10 題」的計分基準不被污染。

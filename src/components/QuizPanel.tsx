@@ -720,7 +720,7 @@ export function QuizPanel() {
 
     if (isMatched) {
       setIsCorrect(true);
-      if (!hasRevealedAnswer) {
+      if (!hasRevealedAnswer && !sessionList[currentIndex]?.isRetry) {
         setCorrectCount(prev => prev + 1);
       }
       setPinkBubble({ show: false, text: "", loading: false });
@@ -792,10 +792,19 @@ export function QuizPanel() {
   };
 
   const handleNextQuestion = () => {
+    let updatedSessionList = [...sessionList];
+    
+    // 若曾答錯或偷看過答案，將此題附加到測驗清單的最後
+    if (attempts > 0 || hasRevealedAnswer) {
+      updatedSessionList.push({ ...sessionList[currentIndex], isRetry: true });
+      setSessionList(updatedSessionList);
+      toast.info("已將剛才答錯的題目移至測驗最後，稍後再挑戰一次！", { icon: '🔄' });
+    }
+
     const nextIdx = currentIndex + 1;
-    if (nextIdx < sessionList.length) {
+    if (nextIdx < updatedSessionList.length) {
       setCurrentIndex(nextIdx);
-      loadChallengeForWord(sessionList[nextIdx]);
+      loadChallengeForWord(updatedSessionList[nextIdx]);
     } else {
       setIsSessionComplete(true);
     }
@@ -977,7 +986,7 @@ export function QuizPanel() {
             {/* Accurate Stats Circle */}
             <div className="bg-white rounded-3xl p-6 border border-slate-100 shadow-sm grid grid-cols-2 gap-4 divide-x divide-slate-100">
               <div className="flex flex-col items-center justify-center">
-                <span className="text-3xl font-black text-blue-600">{correctCount} <span className="text-xs text-slate-400">/ 10</span></span>
+                <span className="text-3xl font-black text-blue-600">{correctCount} <span className="text-xs text-slate-400">/ {sessionList.filter(item => !item.isRetry).length}</span></span>
                 <span className="text-xs text-slate-500 font-medium mt-1">答對字數</span>
               </div>
               <div className="flex flex-col items-center justify-center">
@@ -990,7 +999,7 @@ export function QuizPanel() {
             <div className="text-left space-y-3">
               <h4 className="text-sm font-bold text-slate-700 px-1">本輪複習單字：</h4>
               <div className="max-h-52 overflow-y-auto space-y-2 pr-1 scrollbar-thin">
-                {sessionList.map((item, i) => (
+                {sessionList.filter(item => !item.isRetry).map((item, i) => (
                   <div key={`quiz-review-${item.id}-${i}`} className="flex items-center justify-between text-xs bg-white p-3 rounded-xl border border-slate-100 hover:border-blue-100 transition-all gap-2">
                     <div className="flex items-center gap-2">
                       <Button

@@ -11,6 +11,7 @@ export interface VocabEntry {
   isHard?: boolean;
   createdAt: any; // Firestore Timestamp
   quizChallenge?: any;
+  isRetry?: boolean; // Indicates if this question is a retry appended at the end of a quiz
 }
 
 export interface QuizQuestion {
